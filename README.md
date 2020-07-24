@@ -1,5 +1,5 @@
 # fixed-bit-coding
-Perform fixed bit coding to compress 2 to 64 values
+High-speed, lossless data compression for 2 to 64 values
 
 Compressing small amounts of data is an application that most data compression algorithms cannot address. Most of these algorithms, including LZW methods, become viable with more than 32 data values. The fixed bit coding method described in this paper is designed to compress and decompress 2 to 64 bytes as quickly as possible. Many programmatic data sets are very small and would be suitable targets for data compression with an algorithm such as fixed bit coding. Possible applications of compression of small data sets include reducing memory storage requirements, such as an adjunct to a memory manager; and data compression on the fly, such as in embedded software during network data transfer. 
 
