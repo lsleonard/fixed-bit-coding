@@ -39,7 +39,7 @@
 // for the number of uniques in input, the minimum number of input values for 25% compression
 // uniques   1  2  3  4  5   6   7   8   9   10  11  12  13  14  15  16
 // nvalues   2, 4, 7, 9, 15, 17, 19, 23, 40, 44, 48, 52, 56, 60, 62, 64};
-int uniqueLimits[MAX_FBC_BYTES+1]=
+unsigned int uniqueLimits[MAX_FBC_BYTES+1]=
 //      2    4      7    9            15   17   19       23
 { 0, 0, 1,1, 2,2,2, 3,3, 4,4,4,4,4,4, 5,5, 6,6, 7,7,7,7, 8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
     // 40    44           48           52           56           60     62     64
@@ -67,7 +67,7 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
     {
         case 2:
         {
-            int ival1=(unsigned char)inVals[0];
+            unsigned int ival1=(unsigned char)inVals[0];
             // encode for 1 unique or 2 nibbles
             if (ival1 == (unsigned char)inVals[1])
             {
@@ -108,14 +108,14 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
                     otherVal = nibble4;
                 outBits |= 8;  // set this bit to other value
             }
-            outVals[0] = (unsigned char)(nibble1 << 4) | outBits;
+            outVals[0] = (unsigned char)((nibble1 << 4) | outBits);
             outVals[1] = (unsigned char)otherVal;
             return 12; // save 4 bits
         }
         case 3:
         {
             // encode for 1 unique
-            int ival1=(unsigned char)inVals[0];
+            unsigned int ival1=(unsigned char)inVals[0];
             if ((ival1 == (unsigned char)inVals[1]) && (ival1 == (unsigned char)inVals[2]))
             {
                 if (ival1 > 63)
@@ -164,9 +164,9 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
             if ((nValues == 4) && (outBits))
             {
                 // or in low 4 bits second unique in top bits
-                outVals[0] = (unsigned char)outBits | (ival1 << 4);
-                outVals[1] = (unsigned char)(ival1 >> 4) | (otherVal << 4);
-                outVals[2] = (unsigned char)otherVal >> 4;
+                outVals[0] = (unsigned char)(outBits | (ival1 << 4));
+                outVals[1] = (unsigned char)((ival1 >> 4) | (otherVal << 4));
+                outVals[2] = (unsigned char)(otherVal >> 4);
                 return 20;
             }
             if (nValues == 4)
@@ -194,9 +194,9 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
             if (outBits)
             {
                 // clear low bit byte 0 (not single unique) and or in low 3 bits ival1
-                outVals[0] = (unsigned char)outBits | (ival1 << 5);
-                outVals[1] = (unsigned char)((ival1 >> 3)) | (otherVal << 5);
-                outVals[2] = (unsigned char)otherVal >> 3;
+                outVals[0] = (unsigned char)(outBits | (ival1 << 5));
+                outVals[1] = (unsigned char)(((ival1 >> 3)) | (otherVal << 5));
+                outVals[2] = (unsigned char)(otherVal >> 3);
                 return 21;
             }
             // all 5 values equal
@@ -215,7 +215,7 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
 } // end fbc25
 
 // -----------------------------------------------------------------------------------
-static int fbc25d(unsigned char *inVals, unsigned char *outVals, int nOriginalValues, int *bytesProcessed)
+static int fbc25d(unsigned char *inVals, unsigned char *outVals, unsigned int nOriginalValues, int *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // Decode 2 to 5 values encoded by fbc25.
 // Decode first byte:
@@ -240,7 +240,7 @@ static int fbc25d(unsigned char *inVals, unsigned char *outVals, int nOriginalVa
             unique |= ((unsigned char)inVals[1]) << 6;
         memset(outVals, (unsigned char)unique, nOriginalValues);
         *bytesProcessed = (firstByte & 2) ? 1 : 2;
-        return nOriginalValues;
+        return (int)nOriginalValues;
     }
     int secondByte;
     int thirdByte;
@@ -262,9 +262,9 @@ static int fbc25d(unsigned char *inVals, unsigned char *outVals, int nOriginalVa
             cbits = (firstByte >> 1) & 0x7; // 3 control bits
             nibble1 = (unsigned char)firstByte >> 4;
             nibble2 = (unsigned char)secondByte & 0xf;
-            outVals[0] = (unsigned char)(nibble1 << 4) | ((cbits & 1) ? nibble2 : nibble1);
-            outVals[1] = (unsigned char)(((cbits & 2) ? nibble2 : nibble1) << 4) |
-            ((cbits & 4) ? nibble2 : nibble1);
+            outVals[0] = (unsigned char)((nibble1 << 4) | ((cbits & 1)) ? nibble2 : nibble1);
+            outVals[1] = (unsigned char)((((cbits & 2) ? nibble2 : nibble1) << 4) |
+            ((cbits & 4) ? nibble2 : nibble1));
             return 2;
         case 3:
             // only single unique supported for 3 bytes
@@ -340,14 +340,13 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
             val256[iVal] = 1; // mark encountered
             uniqueOccurrence[iVal] = nUniqueVals; // occurrence count for this unique 0-based
             nUniqueVals++;
-            outVals[nUniqueVals] = iVal; // store unique in output starting at second byte
+            outVals[nUniqueVals] = (unsigned char)iVal; // store unique in output starting at second byte
         }
     } // end of loop finding unique values
  
-    int i;
-    int nextOut;
+    unsigned int i;
+    unsigned int nextOut;
     unsigned int encodingByte;
-    unsigned long encodingInt;
     unsigned int ebShift;
     switch (nUniqueVals)
     {
@@ -359,13 +358,13 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
             unsigned int ival1=inVals[0];
             if (ival1 < 64)
             {
-                outVals[0] = ((ival1 << 2) | 3); // indicate single val and encode in high 6 bits
+                outVals[0] = (unsigned char)((ival1 << 2) | 3); // indicate single val and encode in high 6 bits
                 return 8; // return number of bits output
             }
             else
             {
-                outVals[0] = (1 | (ival1 << 2));
-                outVals[1] = ival1 >> 6;
+                outVals[0] = (unsigned char)(1 | (ival1 << 2));
+                outVals[1] = (unsigned char)ival1 >> 6;
                 return 10; // return number of bits output
             }
         }
@@ -377,9 +376,8 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
             encodingByte |= uniqueOccurrence[inVals[0]] << 5;
             encodingByte |= uniqueOccurrence[inVals[1]] << 6;
             encodingByte |= uniqueOccurrence[inVals[2]] << 7;
-            outVals[0] = encodingByte;
+            outVals[0] = (unsigned char)encodingByte;
             ebShift=1;
-            encodingInt = 0;
             i = 3;
             nextOut = 3;
             while (i + 7 < nValues)
@@ -392,7 +390,7 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 encodingByte |= (uniqueOccurrence[inVals[i++]]) << ebShift++;
                 encodingByte |= (uniqueOccurrence[inVals[i++]]) << ebShift++;
                 encodingByte |= (uniqueOccurrence[inVals[i++]]) << ebShift++;
-                outVals[nextOut++] = encodingByte;
+                outVals[nextOut++] = (unsigned char)encodingByte;
                 ebShift = 1;
             }
             if (i < nValues)
@@ -404,9 +402,9 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                     encodingByte |= (uniqueOccurrence[inVals[i++]]) << ebShift;
                     ebShift++;
                 }
-                outVals[nextOut] = encodingByte;
+                outVals[nextOut] = (unsigned char)encodingByte;
             }
-            return nValues + 21; // one bit encoding for each value + 5 indicator bits + 2 uniques
+            return (int)nValues + 21; // one bit encoding for each value + 5 indicator bits + 2 uniques
         }
         case 3:
         {
@@ -421,16 +419,16 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 encodingByte = 6; // 4 uniques
             encodingByte |= uniqueOccurrence[inVals[0]] << 5;
             // skipping last bit in first byte to be on even byte boundary
-            outVals[0] = encodingByte;
-            int nextOut=nUniqueVals + 1; // start output past uniques
-            int i=1; // start input on second value
+            outVals[0] = (unsigned char)encodingByte;
+            nextOut = nUniqueVals + 1; // start output past uniques
+            i = 1; // start input on second value
             while (i+3 < nValues)
             {
                 encodingByte = uniqueOccurrence[inVals[i++]];
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 2;
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 4;
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 6;
-                outVals[nextOut++] = encodingByte;
+                outVals[nextOut++] = (unsigned char)encodingByte;
             }
             if (i < nValues)
             {
@@ -443,9 +441,9 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                         encodingByte |= uniqueOccurrence[inVals[i]] << 4;
                     }
                 }
-                outVals[nextOut] = encodingByte; // output last partial byte
+                outVals[nextOut] = (unsigned char)encodingByte; // output last partial byte
             }
-            return (nValues * 2) + 6 + (nUniqueVals * 8); // two bits for each value plus 6 indicator bits + 3 or 4 uniques
+            return (int)((nValues * 2) + 6 + (nUniqueVals * 8)); // two bits for each value plus 6 indicator bits + 3 or 4 uniques
         }
         case 5:
         case 6:
@@ -455,7 +453,7 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
             // 3 bits to encode
             encodingByte = (nUniqueVals-1) << 1; // 5 to 8 uniques
             encodingByte |= uniqueOccurrence[inVals[0]] << 5; // first val
-            outVals[0] = encodingByte; // save first byte
+            outVals[0] = (unsigned char)encodingByte; // save first byte
             nextOut=nUniqueVals + 1; // start output past uniques
             // process 8 values and output 3 8-bit values
             i = 1; // first val in first byte
@@ -466,17 +464,17 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 3;
                 partialVal = inVals[i++];
                 encodingByte |= uniqueOccurrence[partialVal] << 6;
-                outVals[nextOut++] = encodingByte;
+                outVals[nextOut++] = (unsigned char)encodingByte;
                 encodingByte = uniqueOccurrence[partialVal] >> 2;
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 1;
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 4;
                 partialVal = inVals[i++];
                 encodingByte |= uniqueOccurrence[partialVal] << 7;
-                outVals[nextOut++] = encodingByte;
+                outVals[nextOut++] = (unsigned char)encodingByte;
                 encodingByte = uniqueOccurrence[partialVal] >> 1;
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 2;
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 5;
-                outVals[nextOut++] = encodingByte;
+                outVals[nextOut++] = (unsigned char)encodingByte;
             }
             // 0 to 7 vals left to process, check after each one for completion
             unsigned int partialByte=0;
@@ -490,7 +488,7 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 if (i == nValues)
                     break;
                 encodingByte |= uniqueOccurrence[(partialVal=inVals[i++])] << 6;
-                outVals[nextOut++] = encodingByte;
+                outVals[nextOut++] = (unsigned char)encodingByte;
                 encodingByte = uniqueOccurrence[partialVal] >> 2;
                 if (i == nValues)
                     break;
@@ -501,16 +499,16 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 if (i == nValues)
                     break;
                 encodingByte |= uniqueOccurrence[(partialVal=inVals[i++])] << 7;
-                outVals[nextOut++] = encodingByte;
+                outVals[nextOut++] = (unsigned char)encodingByte;
                 encodingByte = uniqueOccurrence[partialVal] >> 1;
                 if (i == nValues)
                     break;
                 encodingByte |= uniqueOccurrence[inVals[i++]] << 2;
             }
             if (partialByte)
-                outVals[nextOut] = encodingByte;
+                outVals[nextOut] = (unsigned char)encodingByte;
 
-            return (nValues * 3) + 5 + (nUniqueVals * 8); // three bits for each value plus 5 indicator bits
+            return (int)((nValues * 3) + 5 + (nUniqueVals * 8)); // three bits for each value plus 5 indicator bits
             }
         default: // nUniques 9 through 16
         {
@@ -518,18 +516,18 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 return -1;
             // cases 9 through 16 take 4 bits to encode
             // skipping last 3 bits in first byte to be on even byte boundary
-            outVals[0] = (nUniqueVals-1) << 1;
+            outVals[0] = (unsigned char)((nUniqueVals-1) << 1);
             nextOut = nUniqueVals + 1; // start output past uniques
             i=0;
             while (i + 3 < nValues)
             {
-                outVals[nextOut++] = uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4;
+                outVals[nextOut++] = (unsigned char)(uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4);
                 i += 2;
-                outVals[nextOut++] = uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4;
+                outVals[nextOut++] = (unsigned char)(uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4);
                 i += 2;
-                outVals[nextOut++] = uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4;
+                outVals[nextOut++] = (unsigned char)(uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4);
                 i += 2;
-                outVals[nextOut++] = uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4;
+                outVals[nextOut++] = (unsigned char)(uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4);
                 i += 2;
             }
             if (i < nValues)
@@ -537,21 +535,21 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 encodingByte = uniqueOccurrence[inVals[i++]];
                 if (i < nValues)
                 {
-                    outVals[nextOut++] = encodingByte | (uniqueOccurrence[inVals[i+1]] << 4);
+                    outVals[nextOut++] = (unsigned char)(encodingByte | (uniqueOccurrence[inVals[i+1]] << 4));
                     if (i < nValues)
-                        outVals[nextOut] = uniqueOccurrence[inVals[i]];
+                        outVals[nextOut] = (unsigned char)uniqueOccurrence[inVals[i]];
                 }
                 else
-                    outVals[nextOut] = encodingByte;
+                    outVals[nextOut] = (unsigned char)encodingByte;
             }
-            return (nValues * 4) + 8 + (nUniqueVals * 8); // four bits for each value plus 8 indicator bits + 9 to 16 uniques
+            return (int)((nValues * 4) + 8 + (nUniqueVals * 8)); // four bits for each value plus 8 indicator bits + 9 to 16 uniques
         }
     }
     return -1;
 } // end fbc264
 
 // -----------------------------------------------------------------------------------
-static int fbc264d(unsigned char *inVals, unsigned char *outVals, int nOriginalValues, int *bytesProcessed)
+static int fbc264d(unsigned char *inVals, unsigned char *outVals, unsigned int nOriginalValues, int *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // fixed bit decoding requires number of original values and encoded bytes
 // uncompressed data is not acceppted
@@ -574,17 +572,17 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, int nOriginalV
         // process single unique
         unsigned int unique = firstByte >> 2;
         if (!(firstByte & 2))
-            unique |= inVals[1] << 6;
+            unique |= (unsigned int)inVals[1] << 6;
         memset(outVals, unique, nOriginalValues);
         *bytesProcessed = (firstByte & 2) ? 1 : 2;
-        return nOriginalValues;
+        return (int)nOriginalValues;
     }
     
     unsigned int nUniques = ((firstByte >> 1) & 0xf) + 1;
     unsigned int uniques[MAX_UNIQUES];
     unsigned int uniques1;
     unsigned int uniques2;
-    int nextInVal;
+    unsigned int nextInVal;
     int nextOutVal;
     unsigned int inByte;
     switch (nUniques)
@@ -594,48 +592,48 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, int nOriginalV
             // 1-bit values
             uniques1 = inVals[1];
             uniques2 = inVals[2];
-            outVals[0] = ((firstByte >> 5) & 1) ? uniques2 : uniques1;
-            outVals[1] = ((firstByte >> 6) & 1) ? uniques2 : uniques1;
-            outVals[2] = ((firstByte >> 7) & 1) ? uniques2 : uniques1;
+            outVals[0] = (unsigned char)(((firstByte >> 5) & 1) ? uniques2 : uniques1);
+            outVals[1] = (unsigned char)(((firstByte >> 6) & 1) ? uniques2 : uniques1);
+            outVals[2] = (unsigned char)(((firstByte >> 7) & 1) ? uniques2 : uniques1);
             nextInVal=3;
             nextOutVal=3;
             while (nextOutVal+7 < nOriginalValues)
             {
                 inByte = inVals[nextInVal++];
-                outVals[nextOutVal++] = (inByte & 1) ? uniques2 : uniques1;
-                outVals[nextOutVal++] = (inByte & 2) ? uniques2 : uniques1;
-                outVals[nextOutVal++] = (inByte & 4) ? uniques2 : uniques1;
-                outVals[nextOutVal++] = (inByte & 8) ? uniques2 : uniques1;
-                outVals[nextOutVal++] = (inByte & 16) ? uniques2 : uniques1;
-                outVals[nextOutVal++] = (inByte & 32) ? uniques2 : uniques1;
-                outVals[nextOutVal++] = (inByte & 64) ? uniques2 : uniques1;
-                outVals[nextOutVal++] = (inByte & 128) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 1) ? uniques2 : uniques1);
+                outVals[nextOutVal++] = (unsigned char)((inByte & 2) ? uniques2 : uniques1);
+                outVals[nextOutVal++] = (unsigned char)((inByte & 4) ? uniques2 : uniques1);
+                outVals[nextOutVal++] = (unsigned char)((inByte & 8) ? uniques2 : uniques1);
+                outVals[nextOutVal++] = (unsigned char)((inByte & 16) ? uniques2 : uniques1);
+                outVals[nextOutVal++] = (unsigned char)((inByte & 32) ? uniques2 : uniques1);
+                outVals[nextOutVal++] = (unsigned char)((inByte & 64) ? uniques2 : uniques1);
+                outVals[nextOutVal++] = (unsigned char)((inByte & 128) ? uniques2 : uniques1);
             }
             while (nextOutVal < nOriginalValues)
             {
                 inByte = inVals[nextInVal++];
-                outVals[nextOutVal++] = (inByte & 1) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 1) ? uniques2 : uniques1);
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = (inByte & 2) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 2) ? uniques2 : uniques1);
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = (inByte & 4) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 4) ? uniques2 : uniques1);
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = (inByte & 8) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 8) ? uniques2 : uniques1);
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = (inByte & 16) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 16) ? uniques2 : uniques1);
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = (inByte & 32) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 32) ? uniques2 : uniques1);
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = (inByte & 64) ? uniques2 : uniques1;
+                outVals[nextOutVal++] = (unsigned char)((inByte & 64) ? uniques2 : uniques1);
             }
-            *bytesProcessed = nextInVal;
-            return nOriginalValues;
+            *bytesProcessed = (int)nextInVal;
+            return (int)nOriginalValues;
         }
         case 3:
         case 4:
@@ -651,29 +649,29 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, int nOriginalV
             }
             else
                 nextInVal = 4; // for 3 uniques
-            outVals[0] = uniques[(firstByte >> 5)&3];
+            outVals[0] = (unsigned char)uniques[(firstByte >> 5)&3];
             nextOutVal = 1; // skip high bit of first byte
             while (nextOutVal + 3 < nOriginalValues)
             {
                 inByte = inVals[nextInVal++];
-                outVals[nextOutVal++] = uniques[inByte&3];
-                outVals[nextOutVal++] = uniques[(inByte>>2)&3];
-                outVals[nextOutVal++] = uniques[(inByte>>4)&3];
-                outVals[nextOutVal++] = uniques[(inByte>>6)&3];
+                outVals[nextOutVal++] = (unsigned char)uniques[inByte&3];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>2)&3];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>4)&3];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>6)&3];
             }
             while (nextOutVal < nOriginalValues)
             {
                 inByte = inVals[nextInVal++];
-                outVals[nextOutVal++] = uniques[inByte&3];
+                outVals[nextOutVal++] = (unsigned char)uniques[inByte&3];
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = uniques[(inByte>>2)&3];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>2)&3];
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = uniques[(inByte>>4)&3];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>4)&3];
             }
-            *bytesProcessed = nextInVal;
-            return nOriginalValues;
+            *bytesProcessed = (int)nextInVal;
+            return (int)nOriginalValues;
         }
         case 5:
         case 6:
@@ -681,10 +679,10 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, int nOriginalV
         case 8:
         {
             // 3-bit values for 5 to 8 uniques
-            for (int i=0; i<nUniques; i++)
+            for (unsigned int i=0; i<nUniques; i++)
                 uniques[i] = inVals[i+1];
             nextInVal = nUniques + 1; // for 4 uniques
-            outVals[0] = uniques[(firstByte >> 5)&7];
+            outVals[0] = (unsigned char)uniques[(firstByte >> 5)&7];
             nextOutVal = 1;
             unsigned int inByte2;
             unsigned int inByte3;
@@ -693,64 +691,64 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, int nOriginalV
                 inByte = inVals[nextInVal++];
                 inByte2 = inVals[nextInVal++];
                 inByte3 = inVals[nextInVal++];
-                outVals[nextOutVal++] = uniques[inByte&7];
-                outVals[nextOutVal++] = uniques[(inByte>>3)&7];
-                outVals[nextOutVal++] = uniques[((inByte>>6) | (inByte2<<2))&7];
-                outVals[nextOutVal++] = uniques[(inByte2>>1)&7];
-                outVals[nextOutVal++] = uniques[(inByte2>>4)&7];
-                outVals[nextOutVal++] = uniques[((inByte2>>7) | (inByte3<<1))&7];
-                outVals[nextOutVal++] = uniques[(inByte3>>2)&7];
-                outVals[nextOutVal++] = uniques[(inByte3>>5)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[inByte&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>3)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[((inByte>>6) | (inByte2<<2))&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte2>>1)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte2>>4)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[((inByte2>>7) | (inByte3<<1))&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte3>>2)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte3>>5)&7];
             }
             while (nextOutVal < nOriginalValues)
             {
                 inByte = inVals[nextInVal++];
-                outVals[nextOutVal++] = uniques[inByte&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[inByte&7];
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = uniques[(inByte>>3)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>3)&7];
                 if (nextOutVal == nOriginalValues)
                     break;
                 inByte2 = inVals[nextInVal++];
-                outVals[nextOutVal++] = uniques[((inByte>>6) | (inByte2<<2))&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[((inByte>>6) | (inByte2<<2))&7];
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = uniques[(inByte2>>1)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte2>>1)&7];
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = uniques[(inByte2>>4)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte2>>4)&7];
                 if (nextOutVal == nOriginalValues)
                     break;
                 inByte3 = inVals[nextInVal++];
-                outVals[nextOutVal++] = uniques[((inByte2>>7) | (inByte3<<1))&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[((inByte2>>7) | (inByte3<<1))&7];
                 if (nextOutVal == nOriginalValues)
                     break;
-                outVals[nextOutVal++] = uniques[(inByte3>>2)&7];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte3>>2)&7];
             }
-            *bytesProcessed = nextInVal;
-            return nOriginalValues;
+            *bytesProcessed = (int)nextInVal;
+            return (int)nOriginalValues;
         }
         default:
         {
             // 4-bit values for 9 to 16 uniques
             if (nUniques > MAX_UNIQUES)
                 return -1;
-            for (int i=0; i<nUniques; i++)
+            for (unsigned int i=0; i<nUniques; i++)
                 uniques[i] = inVals[i+1];
             nextInVal = nUniques + 1; // skip past uniques
             nextOutVal = 0;
             while (nextOutVal + 1 < nOriginalValues)
             {
                 inByte = inVals[nextInVal++];
-                outVals[nextOutVal++] = uniques[inByte&0xf];
-                outVals[nextOutVal++] = uniques[(inByte>>4)];
+                outVals[nextOutVal++] = (unsigned char)uniques[inByte&0xf];
+                outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>4)];
             }
             if (nextOutVal < nOriginalValues)
             {
-                outVals[nextOutVal++] = uniques[inVals[nextInVal++] & 0xf];
+                outVals[nextOutVal++] = (unsigned char)uniques[inVals[nextInVal++] & 0xf];
             }
-            *bytesProcessed = nextInVal;
-            return nOriginalValues;
+            *bytesProcessed = (int)nextInVal;
+            return (int)nOriginalValues;
         }
     }
     return -1;
