@@ -2,14 +2,22 @@
 High-speed, lossless data compression for 2 to 64 values
 
 To run the program after compiling:
-  fbc input-file block-size loop-count
-    input-file is the filename of the file to compress
-    block-size is a value from 2 to 64, number of bytes to compress at a time
-    loop-count is optional number of loops in memory to repeat the compression for average run time
+
+    fbc input-file block-size loop-count
+
+      input-file is the filename of the file to compress
+
+      block-size is a value from 2 to 64, number of bytes to compress at a time
+
+      loop-count is optional number of loops in memory to repeat the compression for average run time
+
 The program generates these files:
-  input-file.fbc contains the compressed data
-  input-file.fbc.cq contains the block size and a bit that indicates whether compression succeeded or not for each block
-  input-file.fbcd contains the decompressed data
+
+    input-file.fbc contains the compressed data
+
+    input-file.fbc.cq contains the block size and a bit that indicates whether compression succeeded or not for each block
+
+    input-file.fbcd contains the decompressed data
     
 Compressing small amounts of data is an application that most data compression algorithms cannot address. Most of these algorithms, including LZW methods, become viable with more than 32 data values. The fixed bit coding method described in this paper is designed to compress and decompress 2 to 64 bytes as quickly as possible. Many programmatic data sets are very small and would be suitable targets for data compression with an algorithm such as fixed bit coding. Possible applications of compression of small data sets include reducing memory storage requirements, such as an adjunct to a memory manager; and data compression on the fly, such as in embedded software during network data transfer. 
 
