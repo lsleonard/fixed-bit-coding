@@ -39,14 +39,14 @@
 // for the number of uniques in input, the minimum number of input values for 25% compression
 // uniques   1  2  3  4  5   6   7   8   9   10  11  12  13  14  15  16
 // nvalues   2, 4, 7, 9, 15, 17, 19, 23, 40, 44, 48, 52, 56, 60, 62, 64};
-unsigned int uniqueLimits[MAX_FBC_BYTES+1]=
+uint32_t uniqueLimits[MAX_FBC_BYTES+1]=
 //      2    4      7    9            15   17   19       23
 { 0, 0, 1,1, 2,2,2, 3,3, 4,4,4,4,4,4, 5,5, 6,6, 7,7,7,7, 8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
     // 40    44           48           52           56           60     62     64
     9,9,9,9, 10,10,10,10, 11,11,11,11, 12,12,12,12, 13,13,13,13, 14,14, 15,15, 16};
 
 // -----------------------------------------------------------------------------------
-static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nValues)
+static int32_t fbc25(unsigned char *inVals, unsigned char *outVals, uint32_t nValues)
 // -----------------------------------------------------------------------------------
 // Compress 2 to 5 values with for 1 or 2 unique values
 // Management of whether compressible and number of input values must be maintained
@@ -67,7 +67,7 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
     {
         case 2:
         {
-            unsigned int ival1=(unsigned char)inVals[0];
+            uint32_t ival1=(unsigned char)inVals[0];
             // encode for 1 unique or 2 nibbles
             if (ival1 == (unsigned char)inVals[1])
             {
@@ -81,11 +81,11 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
                 return 8;
             }
             // check for two nibbles the same
-            int outBits=0; // keep track of which nibbles match nibble1 or otherVal
-            int otherVal=-1;
-            int nibble1=ival1 >> 4;
-            int nibble2=ival1 & 0xf;
-            int nibble3=(unsigned char)inVals[1] >> 4;
+            int32_t outBits=0; // keep track of which nibbles match nibble1 or otherVal
+            int32_t otherVal=-1;
+            int32_t nibble1=ival1 >> 4;
+            int32_t nibble2=ival1 & 0xf;
+            int32_t nibble3=(unsigned char)inVals[1] >> 4;
             if (nibble2 != nibble1)
             {
                 otherVal = nibble2;
@@ -99,7 +99,7 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
                     otherVal = nibble3;
                 outBits |= 4; // set this bit to other value
             }
-            int nibble4=(unsigned char)inVals[1] & 0xf;
+            int32_t nibble4=(unsigned char)inVals[1] & 0xf;
             if (nibble4 != nibble1)
             {
                 if ((nibble4 != otherVal) && (otherVal != -1))
@@ -115,7 +115,7 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
         case 3:
         {
             // encode for 1 unique
-            unsigned int ival1=(unsigned char)inVals[0];
+            uint32_t ival1=(unsigned char)inVals[0];
             if ((ival1 == (unsigned char)inVals[1]) && (ival1 == (unsigned char)inVals[2]))
             {
                 if (ival1 > 63)
@@ -133,13 +133,13 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
         case 5:
         {
             // encode for 1 or 2 uniques
-            int ival1=(unsigned char)inVals[0];
-            int ival2=(unsigned char)inVals[1];
-            int ival3=(unsigned char)inVals[2];
-            int ival4=(unsigned char)inVals[3];
-            int outBits=0; // first bit is 1 for one unique
+            int32_t ival1=(unsigned char)inVals[0];
+            int32_t ival2=(unsigned char)inVals[1];
+            int32_t ival3=(unsigned char)inVals[2];
+            int32_t ival4=(unsigned char)inVals[3];
+            int32_t outBits=0; // first bit is 1 for one unique
             // encode 0 for first val, 1 for other val, starting at second bit
-            int otherVal=-1;
+            int32_t otherVal=-1;
             if (ival2 != ival1)
             {
                 otherVal=ival2;
@@ -182,7 +182,7 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
                 return 8;
             }
             // continue to check fifth value
-            int ival5=(unsigned char)inVals[4];
+            int32_t ival5=(unsigned char)inVals[4];
             if (ival5 != ival1)
             {
                 if ((ival5 != otherVal) && (otherVal != -1))
@@ -215,7 +215,7 @@ static int fbc25(unsigned char *inVals, unsigned char *outVals, unsigned int nVa
 } // end fbc25
 
 // -----------------------------------------------------------------------------------
-static int fbc25d(unsigned char *inVals, unsigned char *outVals, unsigned int nOriginalValues, int *bytesProcessed)
+static int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint32_t nOriginalValues, int32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // Decode 2 to 5 values encoded by fbc25.
 // Decode first byte:
@@ -231,24 +231,24 @@ static int fbc25d(unsigned char *inVals, unsigned char *outVals, unsigned int nO
 //   bytesProcessed  number of input bytes processed, which can be used by caller to position past these bytes
 // returns number of bytes output or -1 if error
 {
-    int firstByte=(unsigned char)inVals[0];
+    int32_t firstByte=(unsigned char)inVals[0];
     if (firstByte & 1)
     {
         // process single unique
-        int unique = (unsigned char)firstByte >> 2;
+        int32_t unique = (unsigned char)firstByte >> 2;
         if (!(firstByte & 2))
             unique |= ((unsigned char)inVals[1]) << 6;
         memset(outVals, (unsigned char)unique, nOriginalValues);
         *bytesProcessed = (firstByte & 2) ? 1 : 2;
         return (int)nOriginalValues;
     }
-    int secondByte;
-    int thirdByte;
-    int cbits;
-    int nibble1;
-    int nibble2;
-    int val1;
-    int val2;
+    int32_t secondByte;
+    int32_t thirdByte;
+    int32_t cbits;
+    int32_t nibble1;
+    int32_t nibble2;
+    int32_t val1;
+    int32_t val2;
     switch (nOriginalValues)
     {
             // special encoding for 2 to 5 bytes
@@ -298,7 +298,7 @@ static int fbc25d(unsigned char *inVals, unsigned char *outVals, unsigned int nO
 } // end fbc25d
 
 // -----------------------------------------------------------------------------------
-static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nValues)
+static int32_t fbc264(unsigned char *inVals, unsigned char *outVals, uint32_t nValues)
 // -----------------------------------------------------------------------------------
 // fbc264: Compress nValues bytes. Return 0 if not compressible (no output bytes),
 //    -1 if error; otherwise, number of bits written to outVals.
@@ -316,16 +316,16 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
     if (nValues > MAX_FBC_BYTES)
         return -1; // error
     
-    unsigned int uniqueOccurrence[256]; // order of occurrence of uniques
-    unsigned int nUniqueVals=0; // count of unique vals encountered
+    uint32_t uniqueOccurrence[256]; // order of occurrence of uniques
+    uint32_t nUniqueVals=0; // count of unique vals encountered
     unsigned char val256[256];
     memset(val256, 0, 256);
     
     // process input vals by finding and outputting the uniques starting at 2nd outVal
     // and encoding the repeats to be output later
-    unsigned int inPos=0;
-    unsigned int uniqueLimit=uniqueLimits[nValues]-1; // return uncompressible if exceeded
-    unsigned int iVal; // current inVals[inPos]
+    uint32_t inPos=0;
+    uint32_t uniqueLimit=uniqueLimits[nValues]-1; // return uncompressible if exceeded
+    uint32_t iVal; // current inVals[inPos]
     while (inPos < nValues)
     {
         iVal = inVals[inPos++]; // get this value and inc to next
@@ -344,10 +344,10 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
         }
     } // end of loop finding unique values
  
-    unsigned int i;
-    unsigned int nextOut;
-    unsigned int encodingByte;
-    unsigned int ebShift;
+    uint32_t i;
+    uint32_t nextOut;
+    uint32_t encodingByte;
+    uint32_t ebShift;
     switch (nUniqueVals)
     {
         case 1:
@@ -355,7 +355,7 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
         // ********************** ALL BYTES SAME VALUE *********************
         // first byte: low-order bit indicates single value if 1
         // if single value, next bit indicates whether coded in next 6 bits or next byte
-            unsigned int ival1=inVals[0];
+            uint32_t ival1=inVals[0];
             if (ival1 < 64)
             {
                 outVals[0] = (unsigned char)((ival1 << 2) | 3); // indicate single val and encode in high 6 bits
@@ -457,7 +457,7 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
             nextOut=nUniqueVals + 1; // start output past uniques
             // process 8 values and output 3 8-bit values
             i = 1; // first val in first byte
-            unsigned int partialVal;
+            uint32_t partialVal;
             while (i + 7 < nValues)
             {
                 encodingByte = uniqueOccurrence[inVals[i++]];
@@ -477,7 +477,7 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
                 outVals[nextOut++] = (unsigned char)encodingByte;
             }
             // 0 to 7 vals left to process, check after each one for completion
-            unsigned int partialByte=0;
+            uint32_t partialByte=0;
             while (i < nValues)
             {
                 partialByte = 1;
@@ -549,7 +549,7 @@ static int fbc264(unsigned char *inVals, unsigned char *outVals, unsigned int nV
 } // end fbc264
 
 // -----------------------------------------------------------------------------------
-static int fbc264d(unsigned char *inVals, unsigned char *outVals, unsigned int nOriginalValues, int *bytesProcessed)
+static int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, uint32_t nOriginalValues, int32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // fixed bit decoding requires number of original values and encoded bytes
 // uncompressed data is not acceppted
@@ -566,25 +566,25 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, unsigned int n
     if (nOriginalValues > MAX_FBC_BYTES)
         return -1;
         
-    unsigned int firstByte=inVals[0];
+    uint32_t firstByte=inVals[0];
     if (firstByte & 1)
     {
         // process single unique
-        unsigned int unique = firstByte >> 2;
+        uint32_t unique = firstByte >> 2;
         if (!(firstByte & 2))
-            unique |= (unsigned int)inVals[1] << 6;
+            unique |= (uint32_t)inVals[1] << 6;
         memset(outVals, unique, nOriginalValues);
         *bytesProcessed = (firstByte & 2) ? 1 : 2;
         return (int)nOriginalValues;
     }
     
-    unsigned int nUniques = ((firstByte >> 1) & 0xf) + 1;
-    unsigned int uniques[MAX_UNIQUES];
-    unsigned int uniques1;
-    unsigned int uniques2;
-    unsigned int nextInVal;
-    int nextOutVal;
-    unsigned int inByte;
+    uint32_t nUniques = ((firstByte >> 1) & 0xf) + 1;
+    uint32_t uniques[MAX_UNIQUES];
+    uint32_t uniques1;
+    uint32_t uniques2;
+    uint32_t nextInVal;
+    int32_t nextOutVal;
+    uint32_t inByte;
     switch (nUniques)
     {
         case 2:
@@ -679,13 +679,13 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, unsigned int n
         case 8:
         {
             // 3-bit values for 5 to 8 uniques
-            for (unsigned int i=0; i<nUniques; i++)
+            for (uint32_t i=0; i<nUniques; i++)
                 uniques[i] = inVals[i+1];
             nextInVal = nUniques + 1; // for 4 uniques
             outVals[0] = (unsigned char)uniques[(firstByte >> 5)&7];
             nextOutVal = 1;
-            unsigned int inByte2;
-            unsigned int inByte3;
+            uint32_t inByte2;
+            uint32_t inByte3;
             while (nextOutVal + 7 < nOriginalValues)
             {
                 inByte = inVals[nextInVal++];
@@ -733,7 +733,7 @@ static int fbc264d(unsigned char *inVals, unsigned char *outVals, unsigned int n
             // 4-bit values for 9 to 16 uniques
             if (nUniques > MAX_UNIQUES)
                 return -1;
-            for (unsigned int i=0; i<nUniques; i++)
+            for (uint32_t i=0; i<nUniques; i++)
                 uniques[i] = inVals[i+1];
             nextInVal = nUniques + 1; // skip past uniques
             nextOutVal = 0;
