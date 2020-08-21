@@ -29,6 +29,7 @@
 #ifndef fbc_h
 #define fbc_h
 
+#include <stdint.h>
 #include <string.h>
 
 #define MAX_FBC_BYTES 64  // max input vals supported
@@ -39,16 +40,16 @@
 // for the number of uniques in input, the minimum number of input values for 25% compression
 // uniques   1  2  3  4  5   6   7   8   9   10  11  12  13  14  15  16
 // nvalues   2, 4, 7, 9, 15, 17, 19, 23, 40, 44, 48, 52, 56, 60, 62, 64};
-uint32_t uniqueLimits[MAX_FBC_BYTES+1]=
+static uint32_t uniqueLimits[MAX_FBC_BYTES+1]=
 //      2    4      7    9            15   17   19       23
 { 0, 0, 1,1, 2,2,2, 3,3, 4,4,4,4,4,4, 5,5, 6,6, 7,7,7,7, 8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
     // 40    44           48           52           56           60     62     64
     9,9,9,9, 10,10,10,10, 11,11,11,11, 12,12,12,12, 13,13,13,13, 14,14, 15,15, 16};
 
 // -----------------------------------------------------------------------------------
-static int32_t fbc25(unsigned char *inVals, unsigned char *outVals, uint32_t nValues)
+static inline int32_t fbc25(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
 // -----------------------------------------------------------------------------------
-// Compress 2 to 5 values with for 1 or 2 unique values
+// Compress 2 to 5 values with 1 or 2 unique values
 // Management of whether compressible and number of input values must be maintained
 //    by caller. Decdode requires number of input values and only accepts compressed data.
 // Decode first byte:
@@ -215,7 +216,7 @@ static int32_t fbc25(unsigned char *inVals, unsigned char *outVals, uint32_t nVa
 } // end fbc25
 
 // -----------------------------------------------------------------------------------
-static int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint32_t nOriginalValues, int32_t *bytesProcessed)
+static inline int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint32_t nOriginalValues, int32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // Decode 2 to 5 values encoded by fbc25.
 // Decode first byte:
@@ -298,7 +299,7 @@ static int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint32_t nO
 } // end fbc25d
 
 // -----------------------------------------------------------------------------------
-static int32_t fbc264(unsigned char *inVals, unsigned char *outVals, uint32_t nValues)
+static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
 // -----------------------------------------------------------------------------------
 // fbc264: Compress nValues bytes. Return 0 if not compressible (no output bytes),
 //    -1 if error; otherwise, number of bits written to outVals.
@@ -549,7 +550,7 @@ static int32_t fbc264(unsigned char *inVals, unsigned char *outVals, uint32_t nV
 } // end fbc264
 
 // -----------------------------------------------------------------------------------
-static int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, uint32_t nOriginalValues, int32_t *bytesProcessed)
+static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, int32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // fixed bit decoding requires number of original values and encoded bytes
 // uncompressed data is not acceppted
