@@ -40,14 +40,14 @@
 // for the number of uniques in input, the minimum number of input values for 25% compression
 // uniques   1  2  3  4  5   6   7   8   9   10  11  12  13  14  15  16
 // nvalues   2, 4, 7, 9, 15, 17, 19, 23, 40, 44, 48, 52, 56, 60, 62, 64};
-static uint32_t uniqueLimits[MAX_FBC_BYTES+1]=
+static const uint32_t uniqueLimits[MAX_FBC_BYTES+1]=
 //      2    4      7    9            15   17   19       23
 { 0, 0, 1,1, 2,2,2, 3,3, 4,4,4,4,4,4, 5,5, 6,6, 7,7,7,7, 8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
     // 40    44           48           52           56           60     62     64
     9,9,9,9, 10,10,10,10, 11,11,11,11, 12,12,12,12, 13,13,13,13, 14,14, 15,15, 16};
 
 // -----------------------------------------------------------------------------------
-static inline int32_t fbc25(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
+static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
 // -----------------------------------------------------------------------------------
 // Compress 2 to 5 values with 1 or 2 unique values
 // Management of whether compressible and number of input values must be maintained
@@ -68,7 +68,7 @@ static inline int32_t fbc25(unsigned char *inVals, unsigned char *outVals, const
     {
         case 2:
         {
-            uint32_t ival1=(unsigned char)inVals[0];
+            const uint32_t ival1=(unsigned char)inVals[0];
             // encode for 1 unique or 2 nibbles
             if (ival1 == (unsigned char)inVals[1])
             {
@@ -116,7 +116,7 @@ static inline int32_t fbc25(unsigned char *inVals, unsigned char *outVals, const
         case 3:
         {
             // encode for 1 unique
-            uint32_t ival1=(unsigned char)inVals[0];
+            const uint32_t ival1=(unsigned char)inVals[0];
             if ((ival1 == (unsigned char)inVals[1]) && (ival1 == (unsigned char)inVals[2]))
             {
                 if (ival1 > 63)
@@ -134,10 +134,10 @@ static inline int32_t fbc25(unsigned char *inVals, unsigned char *outVals, const
         case 5:
         {
             // encode for 1 or 2 uniques
-            int32_t ival1=(unsigned char)inVals[0];
-            int32_t ival2=(unsigned char)inVals[1];
-            int32_t ival3=(unsigned char)inVals[2];
-            int32_t ival4=(unsigned char)inVals[3];
+            const int32_t ival1=(unsigned char)inVals[0];
+            const int32_t ival2=(unsigned char)inVals[1];
+            const int32_t ival3=(unsigned char)inVals[2];
+            const int32_t ival4=(unsigned char)inVals[3];
             int32_t outBits=0; // first bit is 1 for one unique
             // encode 0 for first val, 1 for other val, starting at second bit
             int32_t otherVal=-1;
@@ -183,7 +183,7 @@ static inline int32_t fbc25(unsigned char *inVals, unsigned char *outVals, const
                 return 8;
             }
             // continue to check fifth value
-            int32_t ival5=(unsigned char)inVals[4];
+            const int32_t ival5=(unsigned char)inVals[4];
             if (ival5 != ival1)
             {
                 if ((ival5 != otherVal) && (otherVal != -1))
@@ -216,7 +216,7 @@ static inline int32_t fbc25(unsigned char *inVals, unsigned char *outVals, const
 } // end fbc25
 
 // -----------------------------------------------------------------------------------
-static inline int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint32_t nOriginalValues, int32_t *bytesProcessed)
+static inline int32_t fbc25d(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, int32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // Decode 2 to 5 values encoded by fbc25.
 // Decode first byte:
@@ -232,7 +232,7 @@ static inline int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint
 //   bytesProcessed  number of input bytes processed, which can be used by caller to position past these bytes
 // returns number of bytes output or -1 if error
 {
-    int32_t firstByte=(unsigned char)inVals[0];
+    const int32_t firstByte=(unsigned char)inVals[0];
     if (firstByte & 1)
     {
         // process single unique
@@ -243,13 +243,12 @@ static inline int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint
         *bytesProcessed = (firstByte & 2) ? 1 : 2;
         return (int)nOriginalValues;
     }
-    int32_t secondByte;
-    int32_t thirdByte;
     int32_t cbits;
     int32_t nibble1;
     int32_t nibble2;
     int32_t val1;
     int32_t val2;
+    const int32_t secondByte = (unsigned char)inVals[1];
     switch (nOriginalValues)
     {
             // special encoding for 2 to 5 bytes
@@ -259,7 +258,6 @@ static inline int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint
             // high    low        high    low
             // first byte         second byte
             *bytesProcessed = 2;
-            secondByte=(unsigned char)inVals[1];
             cbits = (firstByte >> 1) & 0x7; // 3 control bits
             nibble1 = (unsigned char)firstByte >> 4;
             nibble2 = (unsigned char)secondByte & 0xf;
@@ -272,8 +270,7 @@ static inline int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint
             return -1;
         case 4: // 2 uniques
             *bytesProcessed = 3;
-            secondByte = (unsigned char)inVals[1];
-            thirdByte = (unsigned char)inVals[2];
+            const int32_t thirdByte = (unsigned char)inVals[2];
             val1 = (unsigned char)(firstByte >> 4) | (unsigned char)(secondByte << 4);
             val2 = (unsigned char)(secondByte >> 4) | (unsigned char)(thirdByte << 4);
             outVals[0] = (unsigned char)val1;
@@ -283,10 +280,9 @@ static inline int32_t fbc25d(unsigned char *inVals, unsigned char *outVals, uint
             return 4;
         case 5: // 2 uniques
             *bytesProcessed = 3;
-            secondByte = (unsigned char)inVals[1];
-            thirdByte = (unsigned char)inVals[2];
+            const int32_t thirdByte5 = (unsigned char)inVals[2];
             val1 = (unsigned char)(firstByte >> 5) | (unsigned char)(secondByte << 3);
-            val2 = (unsigned char)(secondByte >> 5) | (unsigned char)(thirdByte << 3);
+            val2 = (unsigned char)(secondByte >> 5) | (unsigned char)(thirdByte5 << 3);
             outVals[0] = (unsigned char)val1;
             outVals[1] = (firstByte & 2) ? (unsigned char)val2 : (unsigned char)val1;
             outVals[2] = (firstByte & 4) ? (unsigned char)val2 : (unsigned char)val1;
@@ -356,7 +352,7 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         // ********************** ALL BYTES SAME VALUE *********************
         // first byte: low-order bit indicates single value if 1
         // if single value, next bit indicates whether coded in next 6 bits or next byte
-            uint32_t ival1=inVals[0];
+            const uint32_t ival1=inVals[0];
             if (ival1 < 64)
             {
                 outVals[0] = (unsigned char)((ival1 << 2) | 3); // indicate single val and encode in high 6 bits
@@ -567,7 +563,7 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
     if (nOriginalValues > MAX_FBC_BYTES)
         return -1;
         
-    uint32_t firstByte=inVals[0];
+    const uint32_t firstByte=inVals[0];
     if (firstByte & 1)
     {
         // process single unique
@@ -579,7 +575,7 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
         return (int)nOriginalValues;
     }
     
-    uint32_t nUniques = ((firstByte >> 1) & 0xf) + 1;
+    const uint32_t nUniques = ((firstByte >> 1) & 0xf) + 1;
     uint32_t uniques[MAX_UNIQUES];
     uint32_t uniques1;
     uint32_t uniques2;
