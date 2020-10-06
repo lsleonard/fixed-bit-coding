@@ -1,9 +1,9 @@
 //
 //  fbc.h
 //  fixed bit coding implementation in static functions
-//  version 1.0
+//  version 1.1
 //
-//  Created by Stevan Leonard on 7/24/20.
+//  Created by Stevan Leonard on 10/05/20.
 //  Copyright © 2020 L. Stevan Leonard. All rights reserved.
 /*
     This program is free software: you can redistribute it and/or modify
@@ -19,12 +19,10 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.//
 */
-// Notes for version 1.0:
+// Notes for version 1.1:
 //   1. The encoding of first byte value could be removed as the first byte is always
 //   the first unique character. Changes envisioned for a future release will
 //   require encoding the first value.
-//
-//   2. For 3 input values, the encoding of 2 nibbles is planned for a future release.
 
 #ifndef fbc_h
 #define fbc_h
@@ -55,8 +53,8 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
 // Decode first byte:
 // 1 = single unique, followed by 1 if upper two bits are 00 and low 6 bits of input; otherwise, high two bits in second byte
 // 0 = encoding by number of values:
-//    2 bytes: two nibbles the same
-//    3 bytes: only supports single unique
+//    2 bytes: two unique nibbles
+//    3 bytes: two unique nibbles
 //    4 or 5 bytes: two uniques
 // Arguments:
 //   inVals   input data
@@ -81,12 +79,12 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
                 outVals[0] = (unsigned char) (ival1 << 2) | 3;
                 return 8;
             }
-            // check for two nibbles the same
-            int32_t outBits=0; // keep track of which nibbles match nibble1 or otherVal
-            int32_t otherVal=-1;
-            int32_t nibble1=ival1 >> 4;
-            int32_t nibble2=ival1 & 0xf;
-            int32_t nibble3=(unsigned char)inVals[1] >> 4;
+            // check for two unique nibbles
+            uint32_t outBits=0; // keep track of which nibbles match nibble1 (0) or otherVal (1)
+            uint32_t otherVal=256;
+            const uint32_t nibble1=ival1 >> 4;
+            const uint32_t nibble2=ival1 & 0xf;
+            const uint32_t nibble3=(unsigned char)inVals[1] >> 4;
             if (nibble2 != nibble1)
             {
                 otherVal = nibble2;
@@ -96,16 +94,16 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
             {
                 if ((nibble3 != otherVal) && (otherVal != -1))
                     return 0;
-                if (otherVal == -1)
+                if (otherVal == 256)
                     otherVal = nibble3;
                 outBits |= 4; // set this bit to other value
             }
-            int32_t nibble4=(unsigned char)inVals[1] & 0xf;
+            const uint32_t nibble4=(unsigned char)inVals[1] & 0xf;
             if (nibble4 != nibble1)
             {
                 if ((nibble4 != otherVal) && (otherVal != -1))
                     return 0;
-                if (otherVal == -1)
+                if (otherVal == 256)
                     otherVal = nibble4;
                 outBits |= 8;  // set this bit to other value
             }
@@ -128,7 +126,55 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
                 outVals[0] = (unsigned char)(ival1 << 2) | 3;
                 return 8;
             }
-            return 0;
+            // check for two unique nibbles
+            uint32_t outBits=0; // keep track of which nibbles match nibble1 or otherVal
+            uint32_t otherVal=256;
+            const uint32_t nibble1=(unsigned char)ival1 >> 4;
+            const uint32_t nibble2=(unsigned char)ival1 & 0xf;
+            const uint32_t nibble3=(unsigned char)inVals[1] >> 4;
+            if (nibble2 != nibble1)
+            {
+                otherVal = nibble2;
+                outBits = 2;
+            }
+            if (nibble3 != nibble1)
+            {
+                if ((nibble3 != otherVal) && (otherVal != 256))
+                    return 0;
+                if (otherVal == 256)
+                    otherVal = nibble3;
+                outBits |= 4; // set this bit to other value
+            }
+            const uint32_t nibble4=(unsigned char)inVals[1] & 0xf;
+            if (nibble4 != nibble1)
+            {
+                if ((nibble4 != otherVal) && (otherVal != 256))
+                    return 0;
+                if (otherVal == 256)
+                    otherVal = nibble4;
+                outBits |= 8;  // set this bit to other value
+            }
+            const uint32_t nibble5=(unsigned char)inVals[2] >> 4;
+            if (nibble5 != nibble1)
+            {
+                if ((nibble5 != otherVal) && (otherVal != 256))
+                    return 0;
+                if (otherVal == 256)
+                    otherVal = nibble5;
+                outBits |= 16;  // set this bit to other value
+            }
+            const uint32_t nibble6=(unsigned char)inVals[2] & 0xf;
+            if (nibble6 != nibble1)
+            {
+                if ((nibble6 != otherVal) && (otherVal != 256))
+                    return 0;
+                if (otherVal == 256)
+                    otherVal = nibble6;
+                outBits |= 32;  // set this bit to other value
+            }
+            outVals[0] = (unsigned char)(nibble1 << 6) | (unsigned char)outBits;
+            outVals[1] = (unsigned char)(otherVal << 2) | (unsigned char)(nibble1 >> 2);
+            return 14; // save 10 bits
         }
         case 4:
         case 5:
@@ -232,43 +278,57 @@ static inline int32_t fbc25d(const unsigned char *inVals, unsigned char *outVals
 //   bytesProcessed  number of input bytes processed, which can be used by caller to position past these bytes
 // returns number of bytes output or -1 if error
 {
-    const int32_t firstByte=(unsigned char)inVals[0];
+    const uint32_t firstByte=(unsigned char)inVals[0];
     if (firstByte & 1)
     {
         // process single unique
-        int32_t unique = (unsigned char)firstByte >> 2;
+        uint32_t unique = firstByte >> 2;
         if (!(firstByte & 2))
-            unique |= ((unsigned char)inVals[1]) << 6;
+            unique |= (unsigned char)(inVals[1] << 6);
         memset(outVals, (unsigned char)unique, nOriginalValues);
         *bytesProcessed = (firstByte & 2) ? 1 : 2;
         return (int)nOriginalValues;
     }
-    int32_t cbits;
-    int32_t nibble1;
-    int32_t nibble2;
-    int32_t val1;
-    int32_t val2;
-    const int32_t secondByte = (unsigned char)inVals[1];
+    uint32_t val1;
+    uint32_t val2;
+    const uint32_t secondByte = (unsigned char)inVals[1];
     switch (nOriginalValues)
     {
             // special encoding for 2 to 5 bytes
         case 2:
+        {
             // decode nibble compression for 2 bytes
             // nibble1 nibble 2   nibble3 nibble4
             // high    low        high    low
             // first byte         second byte
             *bytesProcessed = 2;
-            cbits = (firstByte >> 1) & 0x7; // 3 control bits
-            nibble1 = (unsigned char)firstByte >> 4;
-            nibble2 = (unsigned char)secondByte & 0xf;
-            outVals[0] = (unsigned char)((nibble1 << 4) | ((cbits & 1)) ? nibble2 : nibble1);
+            const uint32_t cbits = (unsigned char)(firstByte >> 1) & 0x7; // 3 control bits
+            const uint32_t nibble1 = (unsigned char)firstByte >> 4;
+            const uint32_t nibble2 = (unsigned char)secondByte & 0xf;
+            outVals[0] = (unsigned char)(nibble1 << 4) | (unsigned char)((cbits & 1) ? nibble2 : nibble1);
             outVals[1] = (unsigned char)((((cbits & 2) ? nibble2 : nibble1) << 4) |
-            ((cbits & 4) ? nibble2 : nibble1));
+            (unsigned char)((cbits & 4) ? nibble2 : nibble1));
             return 2;
+        }
         case 3:
-            // only single unique supported for 3 bytes
-            return -1;
+        {
+            // decode nibble compression for 3 bytes
+            // nibble1 nibble 2   nibble3 nibble4   nibble5 nibble6
+            // high    low        high    low       high    low
+            // first byte         second byte       third byte
+            *bytesProcessed = 2;
+            const uint32_t cbits = ((unsigned char)firstByte >> 1) & 0x1f; // 5 control bits
+            const uint32_t nibble1 = ((unsigned char)firstByte >> 6 | ((unsigned char)secondByte << 2)) & 0xf;
+            const uint32_t nibble2 = ((unsigned char)secondByte >> 2) & 0xf;
+            outVals[0] = (unsigned char)(nibble1 << 4) | (unsigned char)((cbits & 1) ? nibble2 : nibble1);
+            outVals[1] = (unsigned char)((((cbits & 2) ? nibble2 : nibble1) << 4) |
+            (unsigned char)((cbits & 4) ? nibble2 : nibble1));
+            outVals[2] = (unsigned char)((((cbits & 8) ? nibble2 : nibble1) << 4) |
+            (unsigned char)((cbits & 16) ? nibble2 : nibble1));
+            return 3;
+        }
         case 4: // 2 uniques
+        {
             *bytesProcessed = 3;
             const int32_t thirdByte = (unsigned char)inVals[2];
             val1 = (unsigned char)(firstByte >> 4) | (unsigned char)(secondByte << 4);
@@ -278,17 +338,20 @@ static inline int32_t fbc25d(const unsigned char *inVals, unsigned char *outVals
             outVals[2] = (firstByte & 4) ? (unsigned char)val2 : (unsigned char)val1;
             outVals[3] = (firstByte & 8) ? (unsigned char)val2 : (unsigned char)val1;
             return 4;
+        }
         case 5: // 2 uniques
+        {
             *bytesProcessed = 3;
-            const int32_t thirdByte5 = (unsigned char)inVals[2];
+            const int32_t thirdByte = (unsigned char)inVals[2];
             val1 = (unsigned char)(firstByte >> 5) | (unsigned char)(secondByte << 3);
-            val2 = (unsigned char)(secondByte >> 5) | (unsigned char)(thirdByte5 << 3);
+            val2 = (unsigned char)(secondByte >> 5) | (unsigned char)(thirdByte << 3);
             outVals[0] = (unsigned char)val1;
             outVals[1] = (firstByte & 2) ? (unsigned char)val2 : (unsigned char)val1;
             outVals[2] = (firstByte & 4) ? (unsigned char)val2 : (unsigned char)val1;
             outVals[3] = (firstByte & 8) ? (unsigned char)val2 : (unsigned char)val1;
             outVals[4] = (firstByte & 0x10) ? (unsigned char)val2 : (unsigned char)val1;
             return 5;
+        }
         default:
             return -1;
     }
@@ -330,6 +393,7 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         if (val256[iVal] == 0)
         {
             // first encounter of this value
+            // nUniqueVals is 1 less than allowed count at this point
             if (nUniqueVals > uniqueLimit)
             {
                 return 0; // not compressible
@@ -516,7 +580,7 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
             outVals[0] = (unsigned char)((nUniqueVals-1) << 1);
             nextOut = nUniqueVals + 1; // start output past uniques
             i=0;
-            while (i + 3 < nValues)
+            while (i + 7 < nValues)
             {
                 outVals[nextOut++] = (unsigned char)(uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4);
                 i += 2;
@@ -527,17 +591,19 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
                 outVals[nextOut++] = (unsigned char)(uniqueOccurrence[inVals[i]] | uniqueOccurrence[inVals[i+1]] << 4);
                 i += 2;
             }
-            if (i < nValues)
+            while (i < nValues)
             {
+                // 1 to 7 values remain
                 encodingByte = uniqueOccurrence[inVals[i++]];
                 if (i < nValues)
                 {
-                    outVals[nextOut++] = (unsigned char)(encodingByte | (uniqueOccurrence[inVals[i+1]] << 4));
-                    if (i < nValues)
-                        outVals[nextOut] = (unsigned char)uniqueOccurrence[inVals[i]];
+                    outVals[nextOut++] = (unsigned char)(encodingByte | (uniqueOccurrence[inVals[i++]] << 4));
                 }
                 else
+                {
                     outVals[nextOut] = (unsigned char)encodingByte;
+                    break;
+                }
             }
             return (int)((nValues * 4) + 8 + (nUniqueVals * 8)); // four bits for each value plus 8 indicator bits + 9 to 16 uniques
         }

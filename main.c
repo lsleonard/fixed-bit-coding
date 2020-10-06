@@ -175,7 +175,7 @@ COMPRESS_TIMED_LOOP:
                     gCountUniques[0]++; // single unique
                     gCountAverageUniques++; // single unique
                 }
-                else if (nbout == 12)
+                else if ((nbout == 12) || (nbout == 14))
                     gCountNibbles++;
                 else
                 {
