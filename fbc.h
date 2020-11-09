@@ -1,9 +1,9 @@
 //
 //  fbc.h
 //  fixed bit coding implementation in static functions
-//  version 1.1
+//  version 1.2
 //
-//  Created by Stevan Leonard on 10/05/20.
+//  Created by Stevan Leonard on 11/09/20.
 //  Copyright © 2020 L. Stevan Leonard. All rights reserved.
 /*
     This program is free software: you can redistribute it and/or modify
