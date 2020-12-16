@@ -28,6 +28,11 @@
 //   1. Removed output of the first input value as described in note 1 of version 1.1.
 //   2. Added the macro COMPRESS_1_PERCENT to support compression of at least 1%,
 //      baswed on new array uniqueLimits1.
+//
+// Notes for version 1.3:
+//   1. Improved coding of main loop for speed.
+//   2. Tweaked a few lines in encoding.
+//   3. Unrolled one section in decoding of 4-bit values.
 
 #ifndef fbc_h
 #define fbc_h
