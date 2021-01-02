@@ -33,6 +33,17 @@
 //   1. Improved coding of main loop for speed.
 //   2. Tweaked a few lines in encoding.
 //   3. Unrolled one section in decoding of 4-bit values.
+//
+// Notes for version 1.4:
+//   1. Added a text char mode that looks for the 15 most common characters in English plus space.
+//      Defined minimum number of text chars to get 20% compression.
+//      Main loop processes 1/4 of values to determine if text mode should be processed
+//      for the remaining values, which limits overhead.
+//      Added static functions encodeTextMode and decodeTextMode.
+//   3. Used unique count 0 to define text mode.
+//   4. Defined macro TEXT_MODE to suppress text mode unless it's defined.
+//   5. Removed the COMPRESS_1_PERCENT macro as results were none to minimal and speed too slow.
+//   6. For next version, add text mode to 2 to 5 input values.
 
 #ifndef fbc_h
 #define fbc_h
@@ -44,7 +55,8 @@
 #define MAX_FBC_BYTES 64  // max input vals supported
 #define MIN_FBC_BYTES 2  // min input vals supported
 #define MAX_UNIQUES 16 // max uniques supported in input
-//#define COMPRESS_1_PERCENT
+
+static uint32_t gTextMode=1; // text mode is on by default; set to 0 to disable
 
 // ----------------------------------------------
 // for the number of uniques in input, the minimum number of input values for 25% compression
@@ -54,18 +66,76 @@ static const uint32_t uniqueLimits25[MAX_FBC_BYTES+1]=
 //      2    4      7    9            15   17   19       23
 { 0, 0, 1,1, 2,2,2, 3,3, 4,4,4,4,4,4, 5,5, 6,6, 7,7,7,7, 8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
 //  40       44           48           52           56           60     62     64
-    9,9,9,9, 10,10,10,10, 11,11,11,11, 12,12,12,12, 13,13,13,13, 14,14, 15,15, 16};
-
-// for the number of uniques in input, the minimum number of input values for 1% compression
-// uniques   1  2  3  4  5   6   7   8   9   10  11  12  13  14  15  16
-// nvalues   2, 4, 7, 9, 15, 17, 19, 23, 40, 44, 48, 52, 56, 60, 62, 64};
-static const uint32_t uniqueLimits1[MAX_FBC_BYTES+1]=
-//      2  3    5    7    9    11  12   14
-{ 0, 0, 1, 2,2, 3,3, 4,4, 5,5, 6,  7,7, 8,8,8,8,8,8,
-//  20   22     24     26     28     30     32     34
-    9,9, 10,10, 11,11, 12,12, 13,13, 14,14, 15,15, 16,
-    16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16
+    9,9,9,9, 10,10,10,10, 11,11,11,11, 12,12,12,12, 13,13,13,13, 14,14, 15,15, 16
 };
+
+// number of predefined text characters in inVals for number of input values (2 to 64) to have 20% compression
+static const uint32_t textLimits25[MAX_FBC_BYTES+1]=
+{
+//  0  1  2  3  4  5  6  7  8  9 10 11 12  13  14  15  16
+    0, 0, 2, 2, 3, 3, 3, 5, 6, 7, 7, 8, 9, 10, 11, 12, 12,
+//  17  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32
+    13, 14, 14, 15, 16, 16, 17, 18, 18, 19, 20, 20, 21, 22, 22, 23,
+//  33  34  35  36  37  38  39  40  41  42  43  44  45  46  47  48
+    24, 24, 25, 26, 26, 27, 28, 28, 29, 30, 30, 31, 32, 32, 33, 34,
+//  49  50  51  52  53  54  55  56  57  58  59  60  61  62  63  64
+    34, 35, 36, 36, 37, 38, 38, 39, 40, 40, 41, 42, 42, 43, 44, 44
+};
+
+#define MAX_PREDEFINED_CHAR_COUNT 16 // based on frequency of characters from Morse code
+static const uint32_t textChars[MAX_PREDEFINED_CHAR_COUNT]={
+    ' ', 'e', 't', 'a', 'i', 'n', 'o', 's', 'h', 'r', 'd', 'l', 'u', 'c', 'm', 'f'
+};
+
+// a one indicates a character from the most frequent characters based on Morse code set
+static const uint32_t predefinedTextChars[256]={
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1,
+    0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+// index to predefined char or 16 if another value
+static const uint32_t textEncoding[256]={
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    0, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 3, 16, 13, 10, 1, 15, 16, 8, 4, 16, 16, 11, 14, 5, 6,
+    16, 16, 9, 7, 2, 12, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16
+};
+
+void fbcEnableTextMode(void)
+{
+    gTextMode = 1;
+}
+
+void fbcDisableTextMode(void)
+{
+    gTextMode = 0;
+}
 
 // -----------------------------------------------------------------------------------
 static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
@@ -101,6 +171,14 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
                 }
                 outVals[0] = (unsigned char) (ival1 << 2) | 3;
                 return 8;
+            }
+            // check for two text characters
+            if (!(ival1 & 0x80) && !(inVals[1] & 0x80))
+            {
+                if (predefinedTextChars[ival1] & predefinedTextChars[inVals[1]])
+                {
+                    // encode two text chars when this feature is supported
+                }
             }
             // check for two unique nibbles
             uint32_t outBits=0; // keep track of which nibbles match nibble1 (0) or otherVal (1)
@@ -148,6 +226,14 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
                 }
                 outVals[0] = (unsigned char)(ival1 << 2) | 3;
                 return 8;
+            }
+            // check for all three text characters
+            if (!(ival1 & 0x80) && !(inVals[1] & 0x80) && !(inVals[2] & 0x80))
+            {
+                if (predefinedTextChars[ival1] && predefinedTextChars[inVals[1]] && predefinedTextChars[inVals[2]])
+                {
+                    // encode three text chars when this feature is supported
+                }
             }
             // check for two unique nibbles
             uint32_t outBits=0; // keep track of which nibbles match nibble1 or otherVal
@@ -285,7 +371,7 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
 } // end fbc25
 
 // -----------------------------------------------------------------------------------
-static inline int32_t fbc25d(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, int32_t *bytesProcessed)
+static inline int32_t fbc25d(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // Decode 2 to 5 values encoded by fbc25.
 // Decode first byte:
@@ -381,6 +467,68 @@ static inline int32_t fbc25d(const unsigned char *inVals, unsigned char *outVals
 } // end fbc25d
 
 // -----------------------------------------------------------------------------------
+static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
+// -----------------------------------------------------------------------------------
+{
+    // if value is predefined, use its index; otherwise, output 8-bit value
+    // generate control bit 1 if predefined text char, 0 if 8-bit value
+    unsigned char *pInVal=inVals;
+    unsigned char *pLastInValPlusOne=inVals+nValues;
+    uint32_t inVal;
+    uint32_t nextOutVal=2;
+    uint32_t controlByte=0;
+    uint32_t controlBitCnt=0;
+    uint32_t controlOut=1; // position to write control byte when full
+    uint32_t predefinedTCs=0; // two predefined text chars (PTCs), on init, written to outVals[0]
+    uint32_t predefinedTCnt=2; // indicate whether first PTC is encoded for output
+    uint32_t predefinedTCsOut=0; // write a 0 to outVals[0] when first PTC encountered
+    
+    // use predefinedTCs to encode first byte to 0 to indicate text mode and skip high two bits
+    
+    while (pInVal < pLastInValPlusOne)
+    {
+        if (controlBitCnt == 8)
+        {
+            // don't allocate next control byte until needed
+            outVals[controlOut] = (unsigned char)controlByte;
+            controlOut = nextOutVal++;
+            controlByte = 0;
+            controlBitCnt = 0;
+        }
+        if (textEncoding[(inVal=*(pInVal++))] < 16)
+        {
+            // encode 4-bit predefined index textIndex
+            controlByte |= 1 << controlBitCnt++;
+            if (predefinedTCnt == 2)
+            {
+                // write a 0 to outVals[0] when first PTC encountered
+                outVals[predefinedTCsOut] = (unsigned char)predefinedTCs;
+                predefinedTCsOut = nextOutVal++;
+                predefinedTCs = textEncoding[inVal];
+                predefinedTCnt = 1;
+            }
+            else
+            {
+                predefinedTCs |= textEncoding[inVal] << 4;
+                predefinedTCnt++;
+            }
+        }
+        else
+        {
+            // encode 8-bit value
+            // controlByte no-op because bit position is already 0
+            controlBitCnt++;
+            outVals[nextOutVal++] = (unsigned char)inVal;
+        }
+    }
+
+    outVals[controlOut] = (unsigned char)controlByte;
+    outVals[predefinedTCsOut] = (unsigned char)predefinedTCs;
+
+    return (int32_t)nextOutVal * 8; // round up to full byte
+} // end encodeTextMode8
+
+// -----------------------------------------------------------------------------------
 static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
 // -----------------------------------------------------------------------------------
 // fbc264: Compress nValues bytes. Return 0 if not compressible (no output bytes),
@@ -399,34 +547,64 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
     if (nValues > MAX_FBC_BYTES)
         return -1; // error
     
-    // process input vals by finding and outputting the uniques starting at 2nd outVal
+    unsigned char *pInVal;
+    unsigned char *pLastInValPlusOne=inVals+nValues;
+    uint32_t predefinedTextCharCnt=0;
+    uint32_t uniqueLimit=uniqueLimits25[nValues]-1; // return uncompressible if exceeded
+    
+    if (!gTextMode)
+        goto BEGIN_FIXED_BIT_CODING;
+    
+    // process text mode
+    pInVal = inVals;
+    unsigned char *pQuarterInValPlusOne=inVals+nValues/4;
+    // Check 1/4 of the data for text data to limit time checking
+    while (pInVal < pQuarterInValPlusOne)
+    {
+        // examine predefined character count and high bit for first half of values
+        predefinedTextCharCnt += predefinedTextChars[*(pInVal++)];
+    }
+    // check if text char limit reached and if too many
+    if ((predefinedTextCharCnt + nValues/8 >= textLimits25[nValues/4]) &&
+        (predefinedTextCharCnt < nValues * 7 / 8))
+    {
+        while (pInVal < pLastInValPlusOne)
+        {
+            // examine predefined character count and high bit for remaining values
+            predefinedTextCharCnt += predefinedTextChars[*(pInVal++)];
+        }
+        if (predefinedTextCharCnt >= textLimits25[nValues])
+        {
+            // compress in text mode
+            return encodeTextMode(inVals, outVals, nValues);
+        }
+    }
+
+    // fixed bit coding
+    // process input vals by finding and outputting the uniques starting at outVal[1]
     // and encoding the repeats to be output later
+    
+BEGIN_FIXED_BIT_CODING:
+    pInVal = inVals;
     uint32_t uniqueOccurrence[256]; // order of occurrence of uniques
     uint32_t nUniqueVals=0; // count of unique vals encountered
-#ifdef COMPRESS_1_PERCENT
-    uint32_t uniqueLimit=uniqueLimits1[nValues]-1; // return uncompressible if exceeded
-#else
-    uint32_t uniqueLimit=uniqueLimits25[nValues]-1; // return uncompressible if exceeded
-#endif
     unsigned char val256[256];
     memset(val256, 0, 256);
-    unsigned char *pInVal=inVals;
-    unsigned char *pLastInValPlusOne=inVals+nValues;
     while (pInVal < pLastInValPlusOne)
     {
-        if (val256[*pInVal] != (val256[*pInVal]=1))
+        uint32_t inVal=*(pInVal++);
+        if (val256[inVal] != (val256[inVal]=1))
         {
             if (nUniqueVals > uniqueLimit)
             {
                 return 0; // too many uniques to do compression
             }
             // first occurrence of value, add to uniques and set control bit to 0
-            uniqueOccurrence[*pInVal] = nUniqueVals; // occurrence count for this unique
-            outVals[++nUniqueVals] = *pInVal; // store unique in output starting at second byte
+            uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
+            outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
         }
-        pInVal++;
     }
-    
+
     uint32_t i;
     uint32_t nextOut;
     uint32_t encodingByte;
@@ -631,7 +809,50 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
 } // end fbc264
 
 // -----------------------------------------------------------------------------------
-static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, int32_t *bytesProcessed)
+static inline int32_t decodeTextMode(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
+// -----------------------------------------------------------------------------------
+{
+    uint32_t nextInVal=1;
+    uint32_t nextOutVal=0;
+    uint32_t controlByte=0;
+    uint32_t controlBitCnt=8;
+    uint32_t predefinedTCs=0; // two predefined text chars (PTCs), on init, written to outVals[0]
+    uint32_t predefinedTCnt=2; // indicate whether first PTC is encoded for output
+
+    while (nextOutVal < nOriginalValues)
+    {
+        if (controlBitCnt == 8)
+        {
+            controlByte = inVals[nextInVal++];
+            controlBitCnt = 0;
+        }
+        if (controlByte & (1 << controlBitCnt++))
+        {
+            // use predefined text chars based on 4-bit index
+            if (predefinedTCnt == 2)
+            {
+                predefinedTCs = inVals[nextInVal++];
+                outVals[nextOutVal++] = (unsigned char)textChars[(unsigned char)predefinedTCs & 15];
+                predefinedTCnt = 1;
+            }
+            else
+            {
+                outVals[nextOutVal++] = (unsigned char)textChars[predefinedTCs >> 4];
+                predefinedTCnt++;
+            }
+        }
+        else
+        {
+            // read in and output next 8-bit value
+            outVals[nextOutVal++] = inVals[nextInVal++];
+        }
+    }
+    *bytesProcessed = nextInVal;
+    return (int32_t)nOriginalValues;
+} // end decodeTextMode
+
+// -----------------------------------------------------------------------------------
+static inline int32_t fbc264d(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // fixed bit decoding requires number of original values and encoded bytes
 // uncompressed data is not acceppted
@@ -648,13 +869,13 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
     if (nOriginalValues > MAX_FBC_BYTES)
         return -1;
         
-    const uint32_t firstByte=inVals[0];
+    const unsigned char firstByte=inVals[0];
     if (firstByte & 1)
     {
         // process single unique
-        uint32_t unique = firstByte >> 2;
+        unsigned char unique = firstByte >> 2;
         if (!(firstByte & 2))
-            unique |= (uint32_t)inVals[1] << 6;
+            unique |= inVals[1] << 6;
         memset(outVals, unique, nOriginalValues);
         *bytesProcessed = (firstByte & 2) ? 1 : 2;
         return (int)nOriginalValues;
@@ -666,9 +887,12 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
     unsigned char uniques2;
     uint32_t nextInVal;
     int32_t nextOutVal;
-    uint32_t inByte;
+    unsigned char inByte;
     switch (nUniques)
     {
+        case 1:
+                // text mode using predefined text chars
+                return decodeTextMode(inVals, outVals, nOriginalValues, bytesProcessed);
         case 2:
         {
             // 1-bit values
@@ -715,7 +939,7 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
                     break;
                 outVals[nextOutVal++] = (unsigned char)((inByte & 64) ? uniques2 : uniques1);
             }
-            *bytesProcessed = (int)nextInVal;
+            *bytesProcessed = nextInVal;
             return (int)nOriginalValues;
         }
         case 3:
@@ -754,7 +978,7 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
                     break;
                 outVals[nextOutVal++] = (unsigned char)uniques[(inByte>>4)&3];
             }
-            *bytesProcessed = (int)nextInVal;
+            *bytesProcessed = nextInVal;
             return (int)nOriginalValues;
         }
         case 5:
@@ -810,7 +1034,7 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
                     break;
                 outVals[nextOutVal++] = (unsigned char)uniques[(inByte3>>2)&7];
             }
-            *bytesProcessed = (int)nextInVal;
+            *bytesProcessed = nextInVal;
             return (int)nOriginalValues;
         }
         default:
@@ -845,7 +1069,7 @@ static inline int32_t fbc264d(unsigned char *inVals, unsigned char *outVals, con
                 if (nextOutVal < nOriginalValues)
                     outVals[nextOutVal++] = (unsigned char)uniques[inVals[nextInVal++] & 0xf];
             }
-            *bytesProcessed = (int)nextInVal;
+            *bytesProcessed = nextInVal;
             return (int)nOriginalValues;
         }
     }

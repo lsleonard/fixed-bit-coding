@@ -17,20 +17,20 @@
 #include <limits.h>
 #include <math.h>
 
-//#define GEN_STATS
+#define GEN_STATS
 #ifdef GEN_STATS
-double fTotalOutBytes;
-int64_t gCountUnableToCompress=0;
-int64_t gCountAverageUniques=0;
-int64_t gCountNibbles=0;
-static int64_t gCountUniques[MAX_UNIQUES];
-int64_t gnUniques=0;
+static double fTotalOutBytes;
+static uint64_t gCountUnableToCompress;
+static uint64_t gCountAverageUniques;
+static uint64_t gCountNibbles;
+static uint64_t gCountUniques[MAX_UNIQUES];
+static uint32_t gTextModeCnt;
 #endif
 
 #define MAX_FILE_SIZE 20000000
 unsigned char inVal[MAX_FILE_SIZE]; // read entire file into memory
 unsigned char outVal[MAX_FILE_SIZE]; // encode into memory
-int64_t gCountBlocks;
+uint64_t gCountBlocks;
 uint64_t total_out_bytes;
 int64_t nBytes_remaining;
 uint64_t nBytes_to_compress;
@@ -61,7 +61,6 @@ int main(int argc, const char * argv[])
     int32_t loopCnt=0;
     char fName[256];
     char cfName[256]; // for compressed or not
-    
     if (argc < 2)
     {
         printf("fbc error: input file must be specified\n");
@@ -74,6 +73,10 @@ int main(int argc, const char * argv[])
         printf("fbc error: file not found: %s\n", fName);
         return 9;
     }
+    if (gTextMode)
+        printf("Fixed Bit Coding v1.4   Text mode enabled\n   file=%s\n", fName);
+    else
+        printf("Fixed Bit Coding v1.4   Text mode disabled\n   file=%s\n", fName);
     fseek(f_input, 0, SEEK_END); // set to end of file
     if (ftell(f_input) > MAX_FILE_SIZE)
     {
@@ -100,6 +103,7 @@ int main(int argc, const char * argv[])
         printf("fbc error: block size must be from %d to %d\n", MIN_FBC_BYTES, MAX_FBC_BYTES);
         return 3;
     }
+        
     unsigned char blockSize;
     blockSize = (unsigned char)uintBlockSize;
     uint64_t nBytesWritten = fwrite(outVal, 1, total_out_bytes, f_out);
@@ -148,7 +152,7 @@ COMPRESS_TIMED_LOOP:
             nbout = fbc264(inVal+start_inVal, outVal+total_out_bytes, uintBlockSize);
         if (nbout < 0)
         {
-            printf("Error from fbc %d: Number of values must be from 2 to 64\n", nbout);
+            printf("Error from fbc %d: Values out of range 2 to 64\n", nbout);
             return -2;
         }
         else if (nbout == 0)
@@ -187,9 +191,23 @@ COMPRESS_TIMED_LOOP:
             {
                 // examine first byte of output for unique count
                 uint32_t nUniques=(outVal[total_out_bytes] >> 1) & 0xf;
-                gCountUniques[nUniques]++; // uniques encoded as 0 to 15
-                gCountAverageUniques += nUniques + 1;
-                gnUniques++;
+                if (nUniques == 0)
+                {
+                    gTextModeCnt++; // text mode encoding
+                }
+                else
+                {
+                    if (outVal[total_out_bytes] & 1)
+                    {
+                        gCountUniques[0]++; // 1 unique
+                        gCountAverageUniques++;
+                    }
+                    else
+                    {
+                        gCountUniques[nUniques]++; // 2 to 16 uniques encoded as 1 to 15
+                        gCountAverageUniques += nUniques + 1;
+                    }
+                }
             }
 #endif
             gCompressedORnot <<= 1;
@@ -234,14 +252,14 @@ COMPRESS_TIMED_LOOP:
     fclose(f_compressedORnot);
     uint64_t gCORNbytes = (uint64_t)gCORNindex * sizeof(gCompressedORnot);
     
-    printf("Fixed Bit Coding   compressed byte output=%.2f%%   compressed blocks=%.2lf%%\n   time=%f sec.   %.0f bytes per second   inbytes=%lld   outbytes=%llu\n   outbytes/block=%.2f   block size=%d\n   loop count=%d   file=%s\n", (float)100*(1.0-(float)(total_out_bytes+gCORNbytes)/nBytes), (float)100*(1.0-(float)compressedOutBytes/(float)compressedInBytes),  minTimeSpent, (float)nBytes/minTimeSpent, nBytes, total_out_bytes+gCORNbytes, (float)(total_out_bytes+gCORNbytes)/nBytes*(float)uintBlockSize, uintBlockSize, loopCnt, fName);
+    printf("   compressed byte output=%.2f%%   compressed blocks=%.2lf%%\n   time=%f sec.   %.0f bytes per second   inbytes=%lld   outbytes=%llu\n   outbytes/block=%.2f   block size=%d   loop count=%d\n", (float)100*(1.0-(float)(total_out_bytes+gCORNbytes)/nBytes), (float)100*(1.0-(float)compressedOutBytes/(float)compressedInBytes),  minTimeSpent, (float)nBytes/minTimeSpent, nBytes, total_out_bytes+gCORNbytes, (float)(total_out_bytes+gCORNbytes)/nBytes*(float)uintBlockSize, uintBlockSize, loopCnt);
 #ifdef GEN_STATS
-    int64_t compressedBlocks=gCountBlocks-gCountUnableToCompress;
+    uint64_t compressedBlocks=gCountBlocks-gCountUnableToCompress;
     printf("   compressed bit output=%.2f%%   uncompressed blocks=%.2f%%\n   average # uniques=%.2f  1 unique=%.2f%%  2 nibbles=%.2f%%  2 u=%.2f%%  3 u=%.2f%%  4 u=%.2f%%  5 u=%.2f%%  6 u=%.2f%%  7 u=%.2f%%  8 u=%.2f%%  9 u=%.2f%%  10 u=%.2f%%  11 u=%.2f%%  12 u=%.2f%%  13 u=%.2f%%  14 u=%.2f%%  15 u=%.2f%%  16 u=%.2f%%\n", (1.0-(fTotalOutBytes+gCORNbytes)/(float)nBytes)*100,   (float)gCountUnableToCompress/(float)gCountBlocks*100,
         (float)gCountAverageUniques/compressedBlocks, (float)gCountUniques[0]/compressedBlocks*100, (float)gCountNibbles/gCountBlocks*100, (float)gCountUniques[1]/compressedBlocks *100, (float)gCountUniques[2]/compressedBlocks *100, (float)gCountUniques[3]/compressedBlocks *100, (float)gCountUniques[4]/compressedBlocks *100, (float)gCountUniques[5]/compressedBlocks *100, (float)gCountUniques[6]/compressedBlocks *100, (float)gCountUniques[7]/compressedBlocks *100, (float)gCountUniques[8]/compressedBlocks *100, (float)gCountUniques[9]/compressedBlocks *100, (float)gCountUniques[10]/compressedBlocks *100, (float)gCountUniques[11]/compressedBlocks *100, (float)gCountUniques[12]/compressedBlocks *100, (float)gCountUniques[13]/compressedBlocks *100, (float)gCountUniques[14]/compressedBlocks *100, (float)gCountUniques[15]/compressedBlocks *100);
+    printf("   text mode blocks: %d  %.01f%%\n", gTextModeCnt, (float)gTextModeCnt/(float)gCountBlocks*100);
 #endif
     
-
     // decompress output ------------------------------------
     f_input = fopen(fName, "r");
     f_out = fopen(strcat(fName, "d"), "w");
@@ -251,7 +269,7 @@ COMPRESS_TIMED_LOOP:
     loopCnt = 0;
     minTimeSpent = 60; // 60 seconds
     gCountBlocks = 0;
-    int32_t bytes_processed;
+    uint32_t bytes_processed;
 DECOMPRESS_TIMED_LOOP:
     gCORNblocks = 0;
     gCORNindex = 0; // point at first block of compressed bits
@@ -289,7 +307,7 @@ DECOMPRESS_TIMED_LOOP:
                 fwrite(outVal, 1, total_out_bytes, f_out);
                 fclose(f_out);
                 fclose(f_compressedORnot);
-                printf("error from ibe264d\n");
+                printf("error from fbc264d\n");
                 goto COMPRESS_DATA;
             }
             total_out_bytes += (uint64_t)bytes_decompressed;
@@ -323,7 +341,7 @@ DECOMPRESS_TIMED_LOOP:
     fwrite(outVal, 1, (uint64_t)total_out_bytes, f_out);
     fclose(f_out);
     //fclose(f_compressedORnot);
-    printf("fbc264d decompression bytes per second=%.0lf   time=%f sec.\ninbytes=%lld   outbytes=%llu\n", (float)total_out_bytes/(float)minTimeSpent, minTimeSpent, nBytes, total_out_bytes);
+    printf("fbc264d decompression bytes per second=%.0lf   time=%f sec.\n   inbytes=%lld   outbytes=%llu\n", (float)total_out_bytes/(float)minTimeSpent, minTimeSpent, nBytes, total_out_bytes);
     // compare two files someday
 COMPRESS_DATA:
     return 0;
