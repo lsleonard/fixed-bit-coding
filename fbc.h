@@ -475,30 +475,20 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
     unsigned char *pInVal=inVals;
     unsigned char *pLastInValPlusOne=inVals+nValues;
     uint32_t inVal;
-    uint32_t nextOutVal=2;
-    uint32_t controlByte=0;
-    uint32_t controlBitCnt=0;
-    uint32_t controlOut=1; // position to write control byte when full
+    uint32_t nextOutVal=(nValues-1)/8+2; // allocate space for control bits in bytes following first
+    uint64_t controlByte=0;
+    uint64_t controlBit=1;
     uint32_t predefinedTCs=0; // two predefined text chars (PTCs), on init, written to outVals[0]
     uint32_t predefinedTCnt=2; // indicate whether first PTC is encoded for output
     uint32_t predefinedTCsOut=0; // write a 0 to outVals[0] when first PTC encountered
     
-    // use predefinedTCs to encode first byte to 0 to indicate text mode and skip high two bits
-    
     while (pInVal < pLastInValPlusOne)
     {
-        if (controlBitCnt == 8)
-        {
-            // don't allocate next control byte until needed
-            outVals[controlOut] = (unsigned char)controlByte;
-            controlOut = nextOutVal++;
-            controlByte = 0;
-            controlBitCnt = 0;
-        }
         if (textEncoding[(inVal=*(pInVal++))] < 16)
         {
             // encode 4-bit predefined index textIndex
-            controlByte |= 1 << controlBitCnt++;
+            controlByte |= controlBit;
+            controlBit <<= 1;
             if (predefinedTCnt == 2)
             {
                 // write a 0 to outVals[0] when first PTC encountered
@@ -516,13 +506,69 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
         else
         {
             // encode 8-bit value
-            // controlByte no-op because bit position is already 0
-            controlBitCnt++;
+            // controlByte gets a 0 at this bit position
+            controlBit <<= 1;
             outVals[nextOutVal++] = (unsigned char)inVal;
         }
     }
 
-    outVals[controlOut] = (unsigned char)controlByte;
+    // output control bytes for nValues
+    switch ((nValues-1)/8)
+    {
+        case 0:
+            outVals[1] = (unsigned char)controlByte;
+            break;
+        case 1:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            break;
+        case 2:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            break;
+        case 3:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            break;
+        case 4:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            break;
+        case 5:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            outVals[6] = (unsigned char)(controlByte>>40);
+            break;
+        case 6:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            outVals[6] = (unsigned char)(controlByte>>40);
+            outVals[7] = (unsigned char)(controlByte>>48);
+            break;
+        case 7:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            outVals[6] = (unsigned char)(controlByte>>40);
+            outVals[7] = (unsigned char)(controlByte>>48);
+            outVals[8] = (unsigned char)(controlByte>>56);
+            break;
+    }
+    // output last byte of text char encoding
     outVals[predefinedTCsOut] = (unsigned char)predefinedTCs;
 
     return (int32_t)nextOutVal * 8; // round up to full byte
@@ -812,21 +858,72 @@ BEGIN_FIXED_BIT_CODING:
 static inline int32_t decodeTextMode(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 {
-    uint32_t nextInVal=1;
+    uint32_t nextInVal=(nOriginalValues-1)/8+2;
     uint32_t nextOutVal=0;
-    uint32_t controlByte=0;
-    uint32_t controlBitCnt=8;
-    uint32_t predefinedTCs=0; // two predefined text chars (PTCs), on init, written to outVals[0]
+    uint64_t controlByte=0;
+    uint64_t controlBit=1;
+    uint32_t predefinedTCs=0;
     uint32_t predefinedTCnt=2; // indicate whether first PTC is encoded for output
 
+    // read in control bits starting from second byte
+    switch (nextInVal-1)
+    {
+        case 1:
+            controlByte = inVals[1];
+            break;
+        case 2:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            break;
+        case 3:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            break;
+        case 4:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            break;
+        case 5:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            break;
+        case 6:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            controlByte |= (uint64_t)inVals[6]<<40;
+            break;
+        case 7:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            controlByte |= (uint64_t)inVals[6]<<40;
+            controlByte |= (uint64_t)inVals[7]<<48;
+            break;
+        case 8:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            controlByte |= (uint64_t)inVals[6]<<40;
+            controlByte |= (uint64_t)inVals[7]<<48;
+            controlByte |= (uint64_t)inVals[8]<<56;
+            break;
+    }
     while (nextOutVal < nOriginalValues)
     {
-        if (controlBitCnt == 8)
-        {
-            controlByte = inVals[nextInVal++];
-            controlBitCnt = 0;
-        }
-        if (controlByte & (1 << controlBitCnt++))
+        if (controlByte & controlBit)
         {
             // use predefined text chars based on 4-bit index
             if (predefinedTCnt == 2)
@@ -846,6 +943,7 @@ static inline int32_t decodeTextMode(const unsigned char *inVals, unsigned char 
             // read in and output next 8-bit value
             outVals[nextOutVal++] = inVals[nextInVal++];
         }
+        controlBit <<= 1;
     }
     *bytesProcessed = nextInVal;
     return (int32_t)nOriginalValues;
