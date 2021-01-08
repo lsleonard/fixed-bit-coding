@@ -73,10 +73,7 @@ int main(int argc, const char * argv[])
         printf("fbc error: file not found: %s\n", fName);
         return 9;
     }
-    if (gTextMode)
-        printf("Fixed Bit Coding v1.4   Text mode enabled\n   file=%s\n", fName);
-    else
-        printf("Fixed Bit Coding v1.4   Text mode disabled\n   file=%s\n", fName);
+    printf("Fixed Bit Coding v1.5\n   file=%s\n", fName);
     fseek(f_input, 0, SEEK_END); // set to end of file
     if (ftell(f_input) > MAX_FILE_SIZE)
     {
@@ -191,16 +188,16 @@ COMPRESS_TIMED_LOOP:
             {
                 // examine first byte of output for unique count
                 uint32_t nUniques=(outVal[total_out_bytes] >> 1) & 0xf;
-                if (nUniques == 0)
+                if (outVal[total_out_bytes] & 1)
                 {
-                    gTextModeCnt++; // text mode encoding
+                    gCountUniques[0]++; // 1 unique
+                    gCountAverageUniques++;
                 }
                 else
                 {
-                    if (outVal[total_out_bytes] & 1)
+                    if (nUniques == 0)
                     {
-                        gCountUniques[0]++; // 1 unique
-                        gCountAverageUniques++;
+                        gTextModeCnt++; // text mode encoding
                     }
                     else
                     {
@@ -256,8 +253,8 @@ COMPRESS_TIMED_LOOP:
 #ifdef GEN_STATS
     uint64_t compressedBlocks=gCountBlocks-gCountUnableToCompress;
     printf("   compressed bit output=%.2f%%   uncompressed blocks=%.2f%%\n   average # uniques=%.2f  1 unique=%.2f%%  2 nibbles=%.2f%%  2 u=%.2f%%  3 u=%.2f%%  4 u=%.2f%%  5 u=%.2f%%  6 u=%.2f%%  7 u=%.2f%%  8 u=%.2f%%  9 u=%.2f%%  10 u=%.2f%%  11 u=%.2f%%  12 u=%.2f%%  13 u=%.2f%%  14 u=%.2f%%  15 u=%.2f%%  16 u=%.2f%%\n", (1.0-(fTotalOutBytes+gCORNbytes)/(float)nBytes)*100,   (float)gCountUnableToCompress/(float)gCountBlocks*100,
-        (float)gCountAverageUniques/compressedBlocks, (float)gCountUniques[0]/compressedBlocks*100, (float)gCountNibbles/gCountBlocks*100, (float)gCountUniques[1]/compressedBlocks *100, (float)gCountUniques[2]/compressedBlocks *100, (float)gCountUniques[3]/compressedBlocks *100, (float)gCountUniques[4]/compressedBlocks *100, (float)gCountUniques[5]/compressedBlocks *100, (float)gCountUniques[6]/compressedBlocks *100, (float)gCountUniques[7]/compressedBlocks *100, (float)gCountUniques[8]/compressedBlocks *100, (float)gCountUniques[9]/compressedBlocks *100, (float)gCountUniques[10]/compressedBlocks *100, (float)gCountUniques[11]/compressedBlocks *100, (float)gCountUniques[12]/compressedBlocks *100, (float)gCountUniques[13]/compressedBlocks *100, (float)gCountUniques[14]/compressedBlocks *100, (float)gCountUniques[15]/compressedBlocks *100);
-    printf("   text mode blocks: %d  %.01f%%\n", gTextModeCnt, (float)gTextModeCnt/(float)gCountBlocks*100);
+        (float)gCountAverageUniques/(compressedBlocks-gTextModeCnt), (float)gCountUniques[0]/compressedBlocks*100, (float)gCountNibbles/gCountBlocks*100, (float)gCountUniques[1]/compressedBlocks *100, (float)gCountUniques[2]/compressedBlocks *100, (float)gCountUniques[3]/compressedBlocks *100, (float)gCountUniques[4]/compressedBlocks *100, (float)gCountUniques[5]/compressedBlocks *100, (float)gCountUniques[6]/compressedBlocks *100, (float)gCountUniques[7]/compressedBlocks *100, (float)gCountUniques[8]/compressedBlocks *100, (float)gCountUniques[9]/compressedBlocks *100, (float)gCountUniques[10]/compressedBlocks *100, (float)gCountUniques[11]/compressedBlocks *100, (float)gCountUniques[12]/compressedBlocks *100, (float)gCountUniques[13]/compressedBlocks *100, (float)gCountUniques[14]/compressedBlocks *100, (float)gCountUniques[15]/compressedBlocks *100);
+    printf("   text mode blocks: %d  %.01f%% of total blocks  %.01f%% of compressed blocks\n", gTextModeCnt, (float)gTextModeCnt/(float)gCountBlocks*100, (float)gTextModeCnt/(float)compressedBlocks*100);
 #endif
     
     // decompress output ------------------------------------

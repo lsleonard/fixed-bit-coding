@@ -44,6 +44,16 @@
 //   4. Defined macro TEXT_MODE to suppress text mode unless it's defined.
 //   5. Removed the COMPRESS_1_PERCENT macro as results were none to minimal and speed too slow.
 //   6. For next version, add text mode to 2 to 5 input values.
+//
+// Notes for version 1.5:
+//   1. Integrated text mode into the algorithm and removed interface to enable or disable
+//      text mode.
+//   2. Moved the check for unique limit outside the loops on input values.
+//      Limited initial loop to check 5/16 of input values for text mode and cut short
+//      checking most random data.
+//   3. For next version:
+//      a. Add text mode to 2 to 5 input values.
+//      b. Add specific error returns rather than -1 for all.
 
 #ifndef fbc_h
 #define fbc_h
@@ -55,8 +65,6 @@
 #define MAX_FBC_BYTES 64  // max input vals supported
 #define MIN_FBC_BYTES 2  // min input vals supported
 #define MAX_UNIQUES 16 // max uniques supported in input
-
-static uint32_t gTextMode=1; // text mode is on by default; set to 0 to disable
 
 // ----------------------------------------------
 // for the number of uniques in input, the minimum number of input values for 25% compression
@@ -126,16 +134,6 @@ static const uint32_t textEncoding[256]={
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16
 };
-
-void fbcEnableTextMode(void)
-{
-    gTextMode = 1;
-}
-
-void fbcDisableTextMode(void)
-{
-    gTextMode = 0;
-}
 
 // -----------------------------------------------------------------------------------
 static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
@@ -511,6 +509,10 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
             outVals[nextOutVal++] = (unsigned char)inVal;
         }
     }
+    if (nextOutVal >= nValues)
+    {
+        return 0; // data failed to compress
+    }
 
     // output control bytes for nValues
     switch ((nValues-1)/8)
@@ -572,7 +574,7 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
     outVals[predefinedTCsOut] = (unsigned char)predefinedTCs;
 
     return (int32_t)nextOutVal * 8; // round up to full byte
-} // end encodeTextMode8
+} // end encodeTextMode
 
 // -----------------------------------------------------------------------------------
 static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
@@ -594,69 +596,68 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         return -1; // error
     
     unsigned char *pInVal;
-    unsigned char *pLastInValPlusOne=inVals+nValues;
-    uint32_t predefinedTextCharCnt=0;
-    uint32_t uniqueLimit=uniqueLimits25[nValues]-1; // return uncompressible if exceeded
-    
-    if (!gTextMode)
-        goto BEGIN_FIXED_BIT_CODING;
-    
-    // process text mode
-    pInVal = inVals;
-    unsigned char *pQuarterInValPlusOne=inVals+nValues/4;
-    // Check 1/4 of the data for text data to limit time checking
-    while (pInVal < pQuarterInValPlusOne)
-    {
-        // examine predefined character count and high bit for first half of values
-        predefinedTextCharCnt += predefinedTextChars[*(pInVal++)];
-    }
-    // check if text char limit reached and if too many
-    if ((predefinedTextCharCnt + nValues/8 >= textLimits25[nValues/4]) &&
-        (predefinedTextCharCnt < nValues * 7 / 8))
-    {
-        while (pInVal < pLastInValPlusOne)
-        {
-            // examine predefined character count and high bit for remaining values
-            predefinedTextCharCnt += predefinedTextChars[*(pInVal++)];
-        }
-        if (predefinedTextCharCnt >= textLimits25[nValues])
-        {
-            // compress in text mode
-            return encodeTextMode(inVals, outVals, nValues);
-        }
-    }
-
-    // fixed bit coding
-    // process input vals by finding and outputting the uniques starting at outVal[1]
-    // and encoding the repeats to be output later
-    
-BEGIN_FIXED_BIT_CODING:
-    pInVal = inVals;
+    uint32_t predefinedTextCharCnt=0; // count of text chars encountered
     uint32_t uniqueOccurrence[256]; // order of occurrence of uniques
     uint32_t nUniqueVals=0; // count of unique vals encountered
     unsigned char val256[256];
-    memset(val256, 0, 256);
-    while (pInVal < pLastInValPlusOne)
+    const uint32_t uniqueLimit=uniqueLimits25[nValues]; // return uncompressible if exceeded
+    memset(val256, 0, sizeof(val256));
+    pInVal = inVals;
+    
+    // process input vals by finding and outputting the uniques starting at outVal[1]
+    // and encoding the repeats to be output later
+    const unsigned char *pLimitInVals = inVals + (nValues * 5 / 16) + 1; // fewest values to test for text mode
+    while (pInVal < pLimitInVals)
     {
+        // accumulate counts for enough values to test for text mode
         uint32_t inVal=*(pInVal++);
-        if (val256[inVal] != (val256[inVal]=1))
+        predefinedTextCharCnt += predefinedTextChars[inVal]; // count text characters
+        if (val256[inVal] == 0)
         {
-            if (nUniqueVals > uniqueLimit)
-            {
-                return 0; // too many uniques to do compression
-            }
+            val256[inVal] = 1;
             // first occurrence of value, add to uniques and set control bit to 0
             uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
             outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
         }
     }
+    if (nUniqueVals > uniqueLimits25[pInVal-inVals]*3/4+1)
+    {
+        // check text mode validity as it's not considered after this
+        // text mode will have 3/4 text values, but for smaller numbers, use .5
+        // this number of values will almost always compress even if non-text data follows
+        if (predefinedTextCharCnt > (pInVal-inVals)/2)
+        {
+            // compress in text mode
+            return encodeTextMode(inVals, outVals, nValues);
+        }
+        if (nUniqueVals > uniqueLimit)
+            return 0; // too many uniques to compress with fixed bit coding, random data fails here
+    }
+    const unsigned char *pLastInValPlusOne=inVals+nValues;
+    while (pInVal < pLastInValPlusOne)
+    {
+        // accumulte through end of values for fixed bit encoding counts
+        uint32_t inVal=*(pInVal++);
+        if (val256[inVal] == 0)
+        {
+            val256[inVal] = 1;
+            // first occurrence of value, add to uniques and set control bit to 0
+            uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
+            outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
+        }
+    }
+    if (nUniqueVals > uniqueLimit)
+        return 0; // too many uniques to compress
 
     uint32_t i;
     uint32_t nextOut;
     uint32_t encodingByte;
     uint32_t ebShift;
+
     switch (nUniqueVals)
     {
+        case 0:
+            return -1;
         case 1:
         {
         // ********************** ALL BYTES SAME VALUE *********************
@@ -822,7 +823,7 @@ BEGIN_FIXED_BIT_CODING:
             // skipping last 3 bits in first byte to be on even byte boundary
             outVals[0] = (unsigned char)((nUniqueVals-1) << 1);
             nextOut = nUniqueVals + 1; // start output past uniques
-            i=1; // first value is implied by first unique
+            i = 1; // first value is implied by first unique
             while (i + 7 < nValues)
             {
                 encodingByte = uniqueOccurrence[inVals[i++]];
