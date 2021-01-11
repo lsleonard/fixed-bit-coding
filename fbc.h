@@ -485,7 +485,6 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
         if (textEncoding[(inVal=*(pInVal++))] < 16)
         {
             // encode 4-bit predefined index textIndex
-            controlByte |= controlBit;
             controlBit <<= 1;
             if (predefinedTCnt == 2)
             {
@@ -505,6 +504,7 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
         {
             // encode 8-bit value
             // controlByte gets a 0 at this bit position
+            controlByte |= controlBit;
             controlBit <<= 1;
             outVals[nextOutVal++] = (unsigned char)inVal;
         }
@@ -864,7 +864,7 @@ static inline int32_t decodeTextMode(const unsigned char *inVals, unsigned char 
     uint64_t controlByte=0;
     uint64_t controlBit=1;
     uint32_t predefinedTCs=0;
-    uint32_t predefinedTCnt=2; // indicate whether first PTC is encoded for output
+    uint32_t predefinedTCnt=1; // 1 = first 4-bit PTC is encoded for output, otherwise no
 
     // read in control bits starting from second byte
     switch (nextInVal-1)
@@ -926,23 +926,23 @@ static inline int32_t decodeTextMode(const unsigned char *inVals, unsigned char 
     {
         if (controlByte & controlBit)
         {
+            // read in and output next 8-bit value
+            outVals[nextOutVal++] = inVals[nextInVal++];
+        }
+        else
+        {
             // use predefined text chars based on 4-bit index
-            if (predefinedTCnt == 2)
+            if (predefinedTCnt == 1)
             {
                 predefinedTCs = inVals[nextInVal++];
                 outVals[nextOutVal++] = (unsigned char)textChars[(unsigned char)predefinedTCs & 15];
-                predefinedTCnt = 1;
+                predefinedTCnt = 0;
             }
             else
             {
                 outVals[nextOutVal++] = (unsigned char)textChars[predefinedTCs >> 4];
                 predefinedTCnt++;
             }
-        }
-        else
-        {
-            // read in and output next 8-bit value
-            outVals[nextOutVal++] = inVals[nextInVal++];
         }
         controlBit <<= 1;
     }
