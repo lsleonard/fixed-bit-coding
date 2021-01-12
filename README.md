@@ -25,6 +25,8 @@ The basic method employed by fixed bit coding is well known as using only the nu
 
 The fixed bit coding algorithm includes a text mode because English text is a common data format and a data type where small data sets cannot be compressed by fixed bit coding. The Alice in Wonderland text file alice29.txt from the Squash Compression Benchmark achieves 24.3% compression.
 
+The algorithm also includes a single value mode where a single value repeats in at least 1/3 of the number of input values. In this case, any number of other unique values can occur while getting over 18% compression for 64 input values.
+
 Although this paper does not address any specific application of fixed bit coding, its use for small data sets includes subsets of a data set where highly compressible bytes are known to exist. The high speed of scanning means that even when some sections of data cannot be compressed, the overhead for compressing smaller sets of data is very minimal and decode speed is extremely fast.
 
 Fixed bit coding is implemented in the files at https://github.com/lsleonard/fixed-bit-coding. The fbc264 function compresses 2 to 64 values, and calls fbc25 for two to five values. Call fbc25 directly to avoid the call overhead. All functions are defined static and are included in the fbc.h header file. 
