@@ -36,7 +36,7 @@
 //
 // Notes for version 1.4:
 //   1. Added a text char mode that looks for the 15 most common characters in English plus space.
-//      Defined minimum number of text chars to get 20% compression.
+//      Defined minimum number of text chars to get 20% compression, though usually it's 25%.
 //      Main loop processes 1/4 of values to determine if text mode should be processed
 //      for the remaining values, which limits overhead.
 //      Added static functions encodeTextMode and decodeTextMode.
@@ -54,6 +54,13 @@
 //   3. For next version:
 //      a. Add text mode to 2 to 5 input values.
 //      b. Add specific error returns rather than -1 for all.
+// Notes for version 1.6:
+//   1. Added single value mode to algorithm. Repeat counts are accumulated for each value
+//      and any value reaching (nValues * 5 / 16 + 2) is identified as the single value.
+//      Encoding is similar to text mode using 64 control bits. Minimum compression for 64 is 18.75%.
+//   1. Decided not to implement text mode for 2 to 5 values. Time and space tradeoff.
+//   2. Added specific error return numbers for each unexpected program error.
+//   3. Changed 'f' to 'g' in the textChars predefined chars as 'g' is more common in recent text.
 
 #ifndef fbc_h
 #define fbc_h
@@ -92,7 +99,7 @@ static const uint32_t textLimits25[MAX_FBC_BYTES+1]=
 
 #define MAX_PREDEFINED_CHAR_COUNT 16 // based on frequency of characters from Morse code
 static const uint32_t textChars[MAX_PREDEFINED_CHAR_COUNT]={
-    ' ', 'e', 't', 'a', 'i', 'n', 'o', 's', 'h', 'r', 'd', 'l', 'u', 'c', 'm', 'f'
+    ' ', 'e', 't', 'a', 'i', 'n', 'o', 's', 'h', 'r', 'd', 'l', 'u', 'c', 'm', 'g'
 };
 
 // a one indicates a character from the most frequent characters based on Morse code set
@@ -103,7 +110,7 @@ static const uint32_t predefinedTextChars[256]={
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1,
+    0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1,
     0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -123,7 +130,7 @@ static const uint32_t textEncoding[256]={
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-    16, 3, 16, 13, 10, 1, 15, 16, 8, 4, 16, 16, 11, 14, 5, 6,
+    16, 3, 16, 13, 10, 1, 16, 15, 8, 4, 16, 16, 11, 14, 5, 6,
     16, 16, 9, 7, 2, 12, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
@@ -169,14 +176,6 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
                 }
                 outVals[0] = (unsigned char) (ival1 << 2) | 3;
                 return 8;
-            }
-            // check for two text characters
-            if (!(ival1 & 0x80) && !(inVals[1] & 0x80))
-            {
-                if (predefinedTextChars[ival1] & predefinedTextChars[inVals[1]])
-                {
-                    // encode two text chars when this feature is supported
-                }
             }
             // check for two unique nibbles
             uint32_t outBits=0; // keep track of which nibbles match nibble1 (0) or otherVal (1)
@@ -224,14 +223,6 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
                 }
                 outVals[0] = (unsigned char)(ival1 << 2) | 3;
                 return 8;
-            }
-            // check for all three text characters
-            if (!(ival1 & 0x80) && !(inVals[1] & 0x80) && !(inVals[2] & 0x80))
-            {
-                if (predefinedTextChars[ival1] && predefinedTextChars[inVals[1]] && predefinedTextChars[inVals[2]])
-                {
-                    // encode three text chars when this feature is supported
-                }
             }
             // check for two unique nibbles
             uint32_t outBits=0; // keep track of which nibbles match nibble1 or otherVal
@@ -364,7 +355,7 @@ static inline int32_t fbc25(const unsigned char *inVals, unsigned char *outVals,
             return 8;
         }
         default:
-            return -1; // number of values specified not supported (2 to 5 handled here)
+            return -2; // number of values specified not supported (2 to 5 handled here)
     }
 } // end fbc25
 
@@ -460,7 +451,7 @@ static inline int32_t fbc25d(const unsigned char *inVals, unsigned char *outVals
             return 5;
         }
         default:
-            return -1;
+            return -3; // unexpected program error
     }
 } // end fbc25d
 
@@ -485,7 +476,7 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
         if (textEncoding[(inVal=*(pInVal++))] < 16)
         {
             // encode 4-bit predefined index textIndex
-            controlBit <<= 1;
+            controlBit <<= 1; // control bit gets 0 for text index
             if (predefinedTCnt == 2)
             {
                 // write a 0 to outVals[0] when first PTC encountered
@@ -503,7 +494,7 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
         else
         {
             // encode 8-bit value
-            // controlByte gets a 0 at this bit position
+            // controlByte gets a 1 at this bit position for next undefined value
             controlByte |= controlBit;
             controlBit <<= 1;
             outVals[nextOutVal++] = (unsigned char)inVal;
@@ -511,6 +502,8 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
     }
     if (nextOutVal >= nValues)
     {
+        // have to check this as at least 1/4 of values must be text chars, and main loop
+        // verifies only 1/2 of 5/16 of data values
         return 0; // data failed to compress
     }
 
@@ -572,9 +565,100 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
     }
     // output last byte of text char encoding
     outVals[predefinedTCsOut] = (unsigned char)predefinedTCs;
-
+    
     return (int32_t)nextOutVal * 8; // round up to full byte
 } // end encodeTextMode
+
+// -----------------------------------------------------------------------------------
+static inline int32_t encodeSingleValueMode(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues, uint32_t singleValue)
+// -----------------------------------------------------------------------------------
+{
+    // generate control bit 1 if single value, otherwise 0 plus 8-bit value
+    unsigned char *pInVal=inVals;
+    unsigned char *pLastInValPlusOne=inVals+nValues;
+    uint32_t inVal;
+    uint32_t nextOutVal=(nValues-1)/8+2; // allocate space for control bits in bytes following first
+    uint64_t controlByte=0;
+    uint64_t controlBit=1;
+    
+    // output indicator byte, number uniques is 0, followed by next bit set
+    outVals[0] = 0x20; // set 6th bit to indicate single value mode versus text mode
+    outVals[nextOutVal++] = (unsigned char)singleValue;
+    while (pInVal < pLastInValPlusOne)
+    {
+        if ((inVal=*(pInVal++)) != singleValue)
+        {
+            // encode 4-bit predefined index textIndex
+            controlBit <<= 1;
+            outVals[nextOutVal++] = (unsigned char)inVal;
+        }
+        else
+        {
+            // controlByte gets a 1 at this bit position to indicate single value
+            controlByte |= controlBit;
+            controlBit <<= 1;
+        }
+    }
+
+    // output control bytes for nValues
+    switch ((nValues-1)/8)
+    {
+        case 0:
+            outVals[1] = (unsigned char)controlByte;
+            break;
+        case 1:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            break;
+        case 2:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            break;
+        case 3:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            break;
+        case 4:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            break;
+        case 5:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            outVals[6] = (unsigned char)(controlByte>>40);
+            break;
+        case 6:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            outVals[6] = (unsigned char)(controlByte>>40);
+            outVals[7] = (unsigned char)(controlByte>>48);
+            break;
+        case 7:
+            outVals[1] = (unsigned char)controlByte;
+            outVals[2] = (unsigned char)(controlByte>>8);
+            outVals[3] = (unsigned char)(controlByte>>16);
+            outVals[4] = (unsigned char)(controlByte>>24);
+            outVals[5] = (unsigned char)(controlByte>>32);
+            outVals[6] = (unsigned char)(controlByte>>40);
+            outVals[7] = (unsigned char)(controlByte>>48);
+            outVals[8] = (unsigned char)(controlByte>>56);
+            break;
+    }
+    
+    return (int32_t)nextOutVal * 8; // round up to full byte
+} // end encodeSingleValueMode
 
 // -----------------------------------------------------------------------------------
 static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
@@ -593,19 +677,24 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         return fbc25(inVals, outVals, nValues);
     
     if (nValues > MAX_FBC_BYTES)
-        return -1; // error
+        return -1; // only values 2 to 64 supported
     
     unsigned char *pInVal;
     uint32_t predefinedTextCharCnt=0; // count of text chars encountered
     uint32_t uniqueOccurrence[256]; // order of occurrence of uniques
     uint32_t nUniqueVals=0; // count of unique vals encountered
     unsigned char val256[256];
+    uint32_t minRepeatsSingleValueMode=nValues*5/16+2;
+    uint32_t val256u[256]; // count frequency of values
+    int32_t singleValue=-1; // look for value that repeats MIN_REPEATS_SINGLE_VALUE_MODE
     const uint32_t uniqueLimit=uniqueLimits25[nValues]; // return uncompressible if exceeded
     memset(val256, 0, sizeof(val256));
-    pInVal = inVals;
+    if (nValues < 16)
+        minRepeatsSingleValueMode++; // low number of values add overhead
     
     // process input vals by finding and outputting the uniques starting at outVal[1]
     // and encoding the repeats to be output later
+    pInVal = inVals;
     const unsigned char *pLimitInVals = inVals + (nValues * 5 / 16) + 1; // fewest values to test for text mode
     while (pInVal < pLimitInVals)
     {
@@ -615,16 +704,22 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         if (val256[inVal] == 0)
         {
             val256[inVal] = 1;
+            val256u[inVal] = 1;
             // first occurrence of value, add to uniques and set control bit to 0
             uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
             outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
+        }
+        else
+        {
+            val256u[inVal]++;
         }
     }
     if (nUniqueVals > uniqueLimits25[pInVal-inVals]*3/4+1)
     {
         // check text mode validity as it's not considered after this
         // text mode will have 3/4 text values, but for smaller numbers, use .5
-        // this number of values will almost always compress even if non-text data follows
+        // this number of values will almost always compress, though 1/4 of data must be text
+        // chars to compress; encodeTextMode verifies compression occurs
         if (predefinedTextCharCnt > (pInVal-inVals)/2)
         {
             // compress in text mode
@@ -641,13 +736,28 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         if (val256[inVal] == 0)
         {
             val256[inVal] = 1;
+            val256u[inVal] = 1;
             // first occurrence of value, add to uniques and set control bit to 0
             uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
             outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
         }
+        else
+        {
+            val256u[inVal]++;
+            if (val256u[inVal] == minRepeatsSingleValueMode)
+            {
+                singleValue = (int32_t)inVal;
+            }
+        }
     }
     if (nUniqueVals > uniqueLimit)
+    {
+        if (singleValue >= 0)
+        {
+            return encodeSingleValueMode(inVals, outVals, nValues, (uint32_t)singleValue);
+        }
         return 0; // too many uniques to compress
+    }
 
     uint32_t i;
     uint32_t nextOut;
@@ -657,7 +767,7 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
     switch (nUniqueVals)
     {
         case 0:
-            return -1;
+            return -4; // unexpected program error
         case 1:
         {
         // ********************** ALL BYTES SAME VALUE *********************
@@ -818,7 +928,7 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         default: // nUniques 9 through 16
         {
             if (nUniqueVals > MAX_UNIQUES)
-                return -1;
+                return -5; // unexpected program error
             // cases 9 through 16 take 4 bits to encode
             // skipping last 3 bits in first byte to be on even byte boundary
             outVals[0] = (unsigned char)((nUniqueVals-1) << 1);
@@ -852,7 +962,7 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
             return (int)(((nValues-1) * 4) + 8 + (nUniqueVals * 8)); // four bits for each value plus 8 indicator bits + 9 to 16 uniques
         }
     }
-    return -1;
+    return -6; // unexpected program error
 } // end fbc264
 
 // -----------------------------------------------------------------------------------
@@ -951,6 +1061,91 @@ static inline int32_t decodeTextMode(const unsigned char *inVals, unsigned char 
 } // end decodeTextMode
 
 // -----------------------------------------------------------------------------------
+static inline int32_t decodeSingleValueMode(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
+// -----------------------------------------------------------------------------------
+{
+    uint32_t nextInVal=(nOriginalValues-1)/8+2;
+    uint32_t nextOutVal=0;
+    uint64_t controlByte=0;
+    uint64_t controlBit=1;
+    unsigned char singleValue;
+
+    // read in control bits starting from second byte
+    switch (nextInVal-1)
+    {
+        case 1:
+            controlByte = inVals[1];
+            break;
+        case 2:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            break;
+        case 3:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            break;
+        case 4:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            break;
+        case 5:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            break;
+        case 6:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            controlByte |= (uint64_t)inVals[6]<<40;
+            break;
+        case 7:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            controlByte |= (uint64_t)inVals[6]<<40;
+            controlByte |= (uint64_t)inVals[7]<<48;
+            break;
+        case 8:
+            controlByte = inVals[1];
+            controlByte |= (uint64_t)inVals[2]<<8;
+            controlByte |= (uint64_t)inVals[3]<<16;
+            controlByte |= (uint64_t)inVals[4]<<24;
+            controlByte |= (uint64_t)inVals[5]<<32;
+            controlByte |= (uint64_t)inVals[6]<<40;
+            controlByte |= (uint64_t)inVals[7]<<48;
+            controlByte |= (uint64_t)inVals[8]<<56;
+            break;
+    }
+    singleValue = inVals[nextInVal++]; // single value output when control bit is 1
+    while (nextOutVal < nOriginalValues)
+    {
+        if (controlByte & controlBit)
+        {
+            // output single value
+            outVals[nextOutVal++] = singleValue;
+        }
+        else
+        {
+            // output next value from input
+            outVals[nextOutVal++] = inVals[nextInVal++];
+        }
+        controlBit <<= 1;
+    }
+    *bytesProcessed = nextInVal;
+    return (int32_t)nOriginalValues;
+} // end decodeTextMode
+
+// -----------------------------------------------------------------------------------
 static inline int32_t fbc264d(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
 // fixed bit decoding requires number of original values and encoded bytes
@@ -990,8 +1185,13 @@ static inline int32_t fbc264d(const unsigned char *inVals, unsigned char *outVal
     switch (nUniques)
     {
         case 1:
-                // text mode using predefined text chars
-                return decodeTextMode(inVals, outVals, nOriginalValues, bytesProcessed);
+            if (firstByte & 0x20)
+            {
+                // single value mode
+                return decodeSingleValueMode(inVals, outVals, nOriginalValues, bytesProcessed);
+            }
+            // 0 in 6th bit: text mode using predefined text chars
+            return decodeTextMode(inVals, outVals, nOriginalValues, bytesProcessed);
         case 2:
         {
             // 1-bit values
@@ -1140,7 +1340,7 @@ static inline int32_t fbc264d(const unsigned char *inVals, unsigned char *outVal
         {
             // 4-bit values for 9 to 16 uniques
             if (nUniques > MAX_UNIQUES)
-                return -1;
+                return -7; // unexpected program error
             for (uint32_t i=0; i<nUniques; i++)
                 uniques[i] = inVals[i+1];
             nextInVal = nUniques + 1; // skip past uniques
@@ -1172,7 +1372,7 @@ static inline int32_t fbc264d(const unsigned char *inVals, unsigned char *outVal
             return (int)nOriginalValues;
         }
     }
-    return -1;
+    return -8; // unexpected program error
 } // end fbc264d
 
 #endif /* fbc_h */

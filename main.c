@@ -17,7 +17,7 @@
 #include <limits.h>
 #include <math.h>
 
-#define GEN_STATS
+//#define GEN_STATS
 #ifdef GEN_STATS
 static double fTotalOutBytes;
 static uint64_t gCountUnableToCompress;
@@ -25,6 +25,7 @@ static uint64_t gCountAverageUniques;
 static uint64_t gCountNibbles;
 static uint64_t gCountUniques[MAX_UNIQUES];
 static uint32_t gTextModeCnt;
+static uint32_t gSingleValueModeCnt;
 #endif
 
 #define MAX_FILE_SIZE 20000000
@@ -43,6 +44,35 @@ uint64_t gCORN[MAX_FILE_SIZE/128+1]; // store compressed bit info in memory for 
 uint32_t gCORNindex;
 uint64_t gCORNblocks;
 uint64_t compressedBlockCount=0;
+
+static uint32_t top16[256];
+struct top16_s {
+    unsigned char val;
+    uint32_t count;
+} top16_struct[256];
+
+static int qCompare(const void *v1, const void *v2)
+{
+    if (((struct top16_s *)v1)->count > ((struct top16_s *)v2)->count)
+        return -1;
+    if (((struct top16_s *)v1)->count < ((struct top16_s *)v2)->count)
+        return 1;
+    return 0;
+} // end qCompare
+
+void countTop16(int64_t nValues)
+{
+    while (--nValues > 0)
+    {
+        top16[inVal[nValues]]++;
+    }
+    for (int i=0; i<256; i++)
+    {
+        top16_struct[i].count = top16[i];
+        top16_struct[i].val = (unsigned char)i;
+    }
+    qsort(&top16_struct, 256, sizeof(struct top16_struct*), qCompare);
+}
 
 // -----------------------------------------------------------------------------------
 int main(int argc, const char * argv[])
@@ -73,7 +103,7 @@ int main(int argc, const char * argv[])
         printf("fbc error: file not found: %s\n", fName);
         return 9;
     }
-    printf("Fixed Bit Coding v1.5\n   file=%s\n", fName);
+    printf("Fixed Bit Coding v1.6\n   file=%s\n", fName);
     fseek(f_input, 0, SEEK_END); // set to end of file
     if (ftell(f_input) > MAX_FILE_SIZE)
     {
@@ -100,6 +130,7 @@ int main(int argc, const char * argv[])
         printf("fbc error: block size must be from %d to %d\n", MIN_FBC_BYTES, MAX_FBC_BYTES);
         return 3;
     }
+    countTop16(nBytes); // use to find the ordering of top 16 for text mode characters
         
     unsigned char blockSize;
     blockSize = (unsigned char)uintBlockSize;
@@ -149,8 +180,18 @@ COMPRESS_TIMED_LOOP:
             nbout = fbc264(inVal+start_inVal, outVal+total_out_bytes, uintBlockSize);
         if (nbout < 0)
         {
-            printf("Error from fbc %d: Values out of range 2 to 64\n", nbout);
-            return -2;
+            if (nbout == -1)
+            {
+                printf("Error from fbc264 %d: Values out of range 2 to 64\n", nbout);
+                return -2;
+            }
+            if (nbout == -2)
+            {
+                printf("Error from fbc25 %d: Values out of range 2 to 5\n", nbout);
+                return -2;
+            }
+            printf("Unexpected program error=%d", nbout);
+            return -3;
         }
         else if (nbout == 0)
         {
@@ -197,7 +238,10 @@ COMPRESS_TIMED_LOOP:
                 {
                     if (nUniques == 0)
                     {
-                        gTextModeCnt++; // text mode encoding
+                        if (outVal[total_out_bytes] == 0)
+                            gTextModeCnt++; // text mode encoding
+                        else
+                            gSingleValueModeCnt++; // single value mode encoding
                     }
                     else
                     {
@@ -254,7 +298,8 @@ COMPRESS_TIMED_LOOP:
     uint64_t compressedBlocks=gCountBlocks-gCountUnableToCompress;
     printf("   compressed bit output=%.2f%%   uncompressed blocks=%.2f%%\n   average # uniques=%.2f  1 unique=%.2f%%  2 nibbles=%.2f%%  2 u=%.2f%%  3 u=%.2f%%  4 u=%.2f%%  5 u=%.2f%%  6 u=%.2f%%  7 u=%.2f%%  8 u=%.2f%%  9 u=%.2f%%  10 u=%.2f%%  11 u=%.2f%%  12 u=%.2f%%  13 u=%.2f%%  14 u=%.2f%%  15 u=%.2f%%  16 u=%.2f%%\n", (1.0-(fTotalOutBytes+gCORNbytes)/(float)nBytes)*100,   (float)gCountUnableToCompress/(float)gCountBlocks*100,
         (float)gCountAverageUniques/(compressedBlocks-gTextModeCnt), (float)gCountUniques[0]/compressedBlocks*100, (float)gCountNibbles/gCountBlocks*100, (float)gCountUniques[1]/compressedBlocks *100, (float)gCountUniques[2]/compressedBlocks *100, (float)gCountUniques[3]/compressedBlocks *100, (float)gCountUniques[4]/compressedBlocks *100, (float)gCountUniques[5]/compressedBlocks *100, (float)gCountUniques[6]/compressedBlocks *100, (float)gCountUniques[7]/compressedBlocks *100, (float)gCountUniques[8]/compressedBlocks *100, (float)gCountUniques[9]/compressedBlocks *100, (float)gCountUniques[10]/compressedBlocks *100, (float)gCountUniques[11]/compressedBlocks *100, (float)gCountUniques[12]/compressedBlocks *100, (float)gCountUniques[13]/compressedBlocks *100, (float)gCountUniques[14]/compressedBlocks *100, (float)gCountUniques[15]/compressedBlocks *100);
-    printf("   text mode blocks: %d  %.01f%% of total blocks  %.01f%% of compressed blocks\n", gTextModeCnt, (float)gTextModeCnt/(float)gCountBlocks*100, (float)gTextModeCnt/(float)compressedBlocks*100);
+    printf("   text mode blocks: %d  %.01f%% total blocks  %.01f%% compressed blocks\n", gTextModeCnt/loopCnt, (float)gTextModeCnt/(float)gCountBlocks*100, (float)gTextModeCnt/(float)compressedBlocks*100);
+    printf("   single value mode blocks: %d  %.01f%% total blocks  %.01f%% compressed blocks\n", gSingleValueModeCnt/loopCnt, (float)gSingleValueModeCnt/(float)gCountBlocks*100, (float)gSingleValueModeCnt/(float)compressedBlocks*100);
 #endif
     
     // decompress output ------------------------------------
