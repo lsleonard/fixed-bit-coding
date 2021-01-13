@@ -684,14 +684,17 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
     uint32_t uniqueOccurrence[256]; // order of occurrence of uniques
     uint32_t nUniqueVals=0; // count of unique vals encountered
     unsigned char val256[256];
-    uint32_t minRepeatsSingleValueMode=nValues*5/16+2;
-    uint32_t val256u[256]; // count frequency of values
     int32_t singleValue=-1; // look for value that repeats MIN_REPEATS_SINGLE_VALUE_MODE
     const uint32_t uniqueLimit=uniqueLimits25[nValues]; // return uncompressible if exceeded
     memset(val256, 0, sizeof(val256));
+    uint32_t svOverhead=2;
     if (nValues < 16)
-        minRepeatsSingleValueMode++; // low number of values add overhead
-    
+    {
+        // add 1 for extra overhead from small number of values
+        svOverhead++;
+    }
+    const unsigned char minRepeatsSingleValueMode=(unsigned char)(nValues*5/16+svOverhead);
+
     // process input vals by finding and outputting the uniques starting at outVal[1]
     // and encoding the repeats to be output later
     pInVal = inVals;
@@ -701,17 +704,11 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         // accumulate counts for enough values to test for text mode
         uint32_t inVal=*(pInVal++);
         predefinedTextCharCnt += predefinedTextChars[inVal]; // count text characters
-        if (val256[inVal] == 0)
+        if (val256[inVal]++ == 0)
         {
-            val256[inVal] = 1;
-            val256u[inVal] = 1;
             // first occurrence of value, add to uniques and set control bit to 0
             uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
             outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
-        }
-        else
-        {
-            val256u[inVal]++;
         }
     }
     if (nUniqueVals > uniqueLimits25[pInVal-inVals]*3/4+1)
@@ -732,33 +729,48 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
     while (pInVal < pLastInValPlusOne)
     {
         // accumulte through end of values for fixed bit encoding counts
+        // and accumulate value counts for single value mode
         uint32_t inVal=*(pInVal++);
-        if (val256[inVal] == 0)
+        if (val256[inVal]++ == 0)
         {
-            val256[inVal] = 1;
-            val256u[inVal] = 1;
             // first occurrence of value, add to uniques and set control bit to 0
             uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
             outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
         }
-        else
+        else if (val256[inVal] == minRepeatsSingleValueMode)
         {
-            val256u[inVal]++;
-            if (val256u[inVal] == minRepeatsSingleValueMode)
+            singleValue = (int32_t)inVal;
+            break; // continue loop without further checking
+        }
+    }
+    if (singleValue >= 0)
+    {
+        if (nUniqueVals > uniqueLimit)
+        {
+            return encodeSingleValueMode(inVals, outVals, nValues, (uint32_t)singleValue);
+        }
+        // continue check for fixed bit coding
+        while (pInVal < pLastInValPlusOne)
+        {
+            // accumulte through end of values for fixed bit encoding counts
+            uint32_t inVal=*(pInVal++);
+            if (val256[inVal] == 0)
             {
-                singleValue = (int32_t)inVal;
+                // first occurrence of value, add to uniques and set control bit to 0
+                val256[inVal]++;
+                uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
+                outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
             }
         }
     }
     if (nUniqueVals > uniqueLimit)
     {
         if (singleValue >= 0)
-        {
             return encodeSingleValueMode(inVals, outVals, nValues, (uint32_t)singleValue);
-        }
         return 0; // too many uniques to compress
     }
 
+    // process fixed bit coding
     uint32_t i;
     uint32_t nextOut;
     uint32_t encodingByte;
