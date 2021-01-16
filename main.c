@@ -26,6 +26,7 @@ static uint64_t gCountNibbles;
 static uint64_t gCountUniques[MAX_UNIQUES];
 static uint32_t gTextModeCnt;
 static uint32_t gSingleValueModeCnt;
+static uint32_t g7bitCnt;
 #endif
 
 #define MAX_FILE_SIZE 20000000
@@ -88,7 +89,7 @@ int main(int argc, const char * argv[])
     double timeSpent=0;
     double minTimeSpent=100; // 100 seconds
     int32_t loopCntForTime=1;
-    int32_t loopCnt=0;
+    uint32_t loopCnt=0;
     char fName[256];
     char cfName[256]; // for compressed or not
     if (argc < 2)
@@ -103,7 +104,7 @@ int main(int argc, const char * argv[])
         printf("fbc error: file not found: %s\n", fName);
         return 9;
     }
-    printf("Fixed Bit Coding v1.6\n   file=%s\n", fName);
+    printf("Fixed Bit Coding v1.7\n   file=%s\n", fName);
     fseek(f_input, 0, SEEK_END); // set to end of file
     if (ftell(f_input) > MAX_FILE_SIZE)
     {
@@ -240,8 +241,10 @@ COMPRESS_TIMED_LOOP:
                     {
                         if (outVal[total_out_bytes] == 0)
                             gTextModeCnt++; // text mode encoding
-                        else
+                        else if ((outVal[total_out_bytes] & 0x20) > 0)
                             gSingleValueModeCnt++; // single value mode encoding
+                        else if ((outVal[total_out_bytes] & 0x40) > 0)
+                            g7bitCnt++; // 7-bit encoding
                     }
                     else
                     {
@@ -293,13 +296,15 @@ COMPRESS_TIMED_LOOP:
     fclose(f_compressedORnot);
     uint64_t gCORNbytes = (uint64_t)gCORNindex * sizeof(gCompressedORnot);
     
-    printf("   compressed byte output=%.2f%%   compressed blocks=%.2lf%%\n   time=%f sec.   %.0f bytes per second   inbytes=%lld   outbytes=%llu\n   outbytes/block=%.2f   block size=%d   loop count=%d\n", (float)100*(1.0-(float)(total_out_bytes+gCORNbytes)/nBytes), (float)100*(1.0-(float)compressedOutBytes/(float)compressedInBytes),  minTimeSpent, (float)nBytes/minTimeSpent, nBytes, total_out_bytes+gCORNbytes, (float)(total_out_bytes+gCORNbytes)/nBytes*(float)uintBlockSize, uintBlockSize, loopCnt);
+    printf("   compressed byte output=%.2f%%   within compressed blocks=%.2lf%%\n   time=%f sec.   %.0f bytes per second   inbytes=%lld   outbytes=%llu\n   outbytes/block=%.2f   block size=%d   loop count=%d\n", (float)100*(1.0-(float)(total_out_bytes+gCORNbytes)/nBytes), (float)100*(1.0-(float)compressedOutBytes/(float)compressedInBytes),  minTimeSpent, (float)nBytes/minTimeSpent, nBytes, total_out_bytes+gCORNbytes, (float)(total_out_bytes+gCORNbytes)/nBytes*(float)uintBlockSize, uintBlockSize, loopCnt);
 #ifdef GEN_STATS
     uint64_t compressedBlocks=gCountBlocks-gCountUnableToCompress;
-    printf("   compressed bit output=%.2f%%   uncompressed blocks=%.2f%%\n   average # uniques=%.2f  1 unique=%.2f%%  2 nibbles=%.2f%%  2 u=%.2f%%  3 u=%.2f%%  4 u=%.2f%%  5 u=%.2f%%  6 u=%.2f%%  7 u=%.2f%%  8 u=%.2f%%  9 u=%.2f%%  10 u=%.2f%%  11 u=%.2f%%  12 u=%.2f%%  13 u=%.2f%%  14 u=%.2f%%  15 u=%.2f%%  16 u=%.2f%%\n", (1.0-(fTotalOutBytes+gCORNbytes)/(float)nBytes)*100,   (float)gCountUnableToCompress/(float)gCountBlocks*100,
-        (float)gCountAverageUniques/(compressedBlocks-gTextModeCnt), (float)gCountUniques[0]/compressedBlocks*100, (float)gCountNibbles/gCountBlocks*100, (float)gCountUniques[1]/compressedBlocks *100, (float)gCountUniques[2]/compressedBlocks *100, (float)gCountUniques[3]/compressedBlocks *100, (float)gCountUniques[4]/compressedBlocks *100, (float)gCountUniques[5]/compressedBlocks *100, (float)gCountUniques[6]/compressedBlocks *100, (float)gCountUniques[7]/compressedBlocks *100, (float)gCountUniques[8]/compressedBlocks *100, (float)gCountUniques[9]/compressedBlocks *100, (float)gCountUniques[10]/compressedBlocks *100, (float)gCountUniques[11]/compressedBlocks *100, (float)gCountUniques[12]/compressedBlocks *100, (float)gCountUniques[13]/compressedBlocks *100, (float)gCountUniques[14]/compressedBlocks *100, (float)gCountUniques[15]/compressedBlocks *100);
+    uint64_t fbcBlocks=compressedBlocks-gTextModeCnt-g7bitCnt-gSingleValueModeCnt;
+    printf("   compressed bit output=%.2f%%   uncompressed blocks=%.2f%%\n   fixed bit coding blocks: %llu  %.01f%% total blocks  %.01f%% compressed blocks\n      average # uniques=%.2f  1 unique=%.2f%%  2 nibbles=%.2f%%  2 u=%.2f%%  3 u=%.2f%%  4 u=%.2f%%  5 u=%.2f%%  6 u=%.2f%%  7 u=%.2f%%  8 u=%.2f%%  9 u=%.2f%%  10 u=%.2f%%  11 u=%.2f%%  12 u=%.2f%%  13 u=%.2f%%  14 u=%.2f%%  15 u=%.2f%%  16 u=%.2f%%\n", (1.0-(fTotalOutBytes+gCORNbytes)/(float)nBytes)*100,   (float)gCountUnableToCompress/(float)gCountBlocks*100, fbcBlocks/loopCnt, (float)fbcBlocks/(float)gCountBlocks*100, (float)fbcBlocks/(float)compressedBlocks*100,
+        (float)gCountAverageUniques/fbcBlocks, (float)gCountUniques[0]/fbcBlocks*100, (float)gCountNibbles/fbcBlocks*100, (float)gCountUniques[1]/fbcBlocks*100, (float)gCountUniques[2]/fbcBlocks*100, (float)gCountUniques[3]/fbcBlocks*100, (float)gCountUniques[4]/fbcBlocks*100, (float)gCountUniques[5]/fbcBlocks*100, (float)gCountUniques[6]/fbcBlocks*100, (float)gCountUniques[7]/fbcBlocks*100, (float)gCountUniques[8]/fbcBlocks*100, (float)gCountUniques[9]/fbcBlocks*100, (float)gCountUniques[10]/fbcBlocks*100, (float)gCountUniques[11]/compressedBlocks*100, (float)gCountUniques[12]/fbcBlocks*100, (float)gCountUniques[13]/fbcBlocks*100, (float)gCountUniques[14]/fbcBlocks*100, (float)gCountUniques[15]/fbcBlocks*100);
     printf("   text mode blocks: %d  %.01f%% total blocks  %.01f%% compressed blocks\n", gTextModeCnt/loopCnt, (float)gTextModeCnt/(float)gCountBlocks*100, (float)gTextModeCnt/(float)compressedBlocks*100);
     printf("   single value mode blocks: %d  %.01f%% total blocks  %.01f%% compressed blocks\n", gSingleValueModeCnt/loopCnt, (float)gSingleValueModeCnt/(float)gCountBlocks*100, (float)gSingleValueModeCnt/(float)compressedBlocks*100);
+    printf("   7-bit mode blocks: %d  %.01f%% total blocks  %.01f%% compressed blocks\n", g7bitCnt/loopCnt, (float)g7bitCnt/(float)gCountBlocks*100, (float)g7bitCnt/(float)compressedBlocks*100);
 #endif
     
     // decompress output ------------------------------------

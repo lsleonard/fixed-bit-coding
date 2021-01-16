@@ -54,13 +54,18 @@
 //   3. For next version:
 //      a. Add text mode to 2 to 5 input values.
 //      b. Add specific error returns rather than -1 for all.
+//
 // Notes for version 1.6:
 //   1. Added single value mode to algorithm. Repeat counts are accumulated for each value
-//      and any value reaching (nValues * 5 / 16 + 2) is identified as the single value.
-//      Encoding is similar to text mode using 64 control bits. Minimum compression for 64 is 18.75%.
-//   1. Decided not to implement text mode for 2 to 5 values. Time and space tradeoff.
-//   2. Added specific error return numbers for each unexpected program error.
-//   3. Changed 'f' to 'g' in the textChars predefined chars as 'g' is more common in recent text.
+//      and any value reaching minRepeatsSingleValueMode is identified as the single value.
+//      Encoding is similar to text mode using 64 control bits. Minimum compression for 64 is 11%.
+//   2. Decided not to implement text mode for 2 to 5 values. Time and space tradeoff.
+//   3. Added specific error return numbers for each unexpected program error.
+//   4. Changed 'f' to 'g' in the textChars predefined chars as 'g' is more common in recent text.
+//
+// Notes for version 1.7:
+//   1. For single value mode, replace fixed bit mode if singleValueOverFixexBitRepeats.
+//   2. Added 7-bit mode to catch any blocks before failure where all data have high bit clear.
 
 #ifndef fbc_h
 #define fbc_h
@@ -570,7 +575,7 @@ static inline int32_t encodeTextMode(unsigned char *inVals, unsigned char *outVa
 } // end encodeTextMode
 
 // -----------------------------------------------------------------------------------
-static inline int32_t encodeSingleValueMode(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues, uint32_t singleValue)
+static inline int32_t encodeSingleValueMode(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues, int32_t singleValue)
 // -----------------------------------------------------------------------------------
 {
     // generate control bit 1 if single value, otherwise 0 plus 8-bit value
@@ -586,7 +591,7 @@ static inline int32_t encodeSingleValueMode(unsigned char *inVals, unsigned char
     outVals[nextOutVal++] = (unsigned char)singleValue;
     while (pInVal < pLastInValPlusOne)
     {
-        if ((inVal=*(pInVal++)) != singleValue)
+        if ((inVal=*(pInVal++)) != (uint32_t)singleValue)
         {
             // encode 4-bit predefined index textIndex
             controlBit <<= 1;
@@ -660,6 +665,61 @@ static inline int32_t encodeSingleValueMode(unsigned char *inVals, unsigned char
     return (int32_t)nextOutVal * 8; // round up to full byte
 } // end encodeSingleValueMode
 
+static inline int32_t encode7bits(const unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
+{
+    uint32_t nextOutVal=1;
+    uint32_t nextInVal=0;
+    uint32_t val1;
+    uint32_t val2;
+    
+    outVals[0] = 0x40; // indicate 7-bit mode
+    // process groups of 8 bytes to output 7 bytes
+    while (nextInVal + 7 < nValues)
+    {
+        // copy groups of 8 7-bit vals into 7 bytes
+        val1 = inVals[nextInVal++];
+        val2 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(val1 | (val2 << 7));
+        val1 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)((val2 >> 1) | (val1 << 6));
+        val2 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)((val1 >> 2) | (val2 << 5));
+        val1 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)((val2 >> 3) | (val1 << 4));
+        val2 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)((val1 >> 4) | (val2 << 3));
+        val1 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)((val2 >> 5) | (val1 << 2));
+        val2 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)((val1 >> 6) | (val2 << 1));
+    }
+    while (nextInVal < nValues)
+    {
+        // output final values as full bytes because no bytes saved, only bits
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextInVal == nValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextInVal == nValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextInVal == nValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextInVal == nValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextInVal == nValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextInVal == nValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+            break;
+    }
+    return (int32_t)nextOutVal*8;
+} // end encode7bits
+
 // -----------------------------------------------------------------------------------
 static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, const uint32_t nValues)
 // -----------------------------------------------------------------------------------
@@ -680,94 +740,112 @@ static inline int32_t fbc264(unsigned char *inVals, unsigned char *outVals, cons
         return -1; // only values 2 to 64 supported
     
     unsigned char *pInVal;
+    uint32_t highBitCheck=0;
     uint32_t predefinedTextCharCnt=0; // count of text chars encountered
     uint32_t uniqueOccurrence[256]; // order of occurrence of uniques
     uint32_t nUniqueVals=0; // count of unique vals encountered
     unsigned char val256[256];
-    int32_t singleValue=-1; // look for value that repeats MIN_REPEATS_SINGLE_VALUE_MODE
-    const uint32_t uniqueLimit=uniqueLimits25[nValues]; // return uncompressible if exceeded
+    const uint32_t uniqueLimit=uniqueLimits25[nValues]; // if exceeded, return uncompressible by fixed bit coding
     memset(val256, 0, sizeof(val256));
-    uint32_t svOverhead=2;
-    if (nValues < 16)
-    {
-        // add 1 for extra overhead from small number of values
-        svOverhead++;
-    }
-    const unsigned char minRepeatsSingleValueMode=(unsigned char)(nValues*5/16+svOverhead);
+    const uint32_t nValsInitLoop=(nValues*5/16)+1;
+    const unsigned char *pLastInValPlusOne=inVals+nValues;
+    const unsigned char *pLimitInVals=inVals+nValsInitLoop; // fewest values to test for text mode
 
-    // process input vals by finding and outputting the uniques starting at outVal[1]
-    // and encoding the repeats to be output later
+    // process enough input vals to eliminate most random data and to check for text mode
+    // for fixed bit coding find and output the uniques starting at outVal[1]
+    //    and saving the unique occurrence value to be used when values are output
+    // for 7 bit mode OR every value
+    // for text mode count number of text characters
+    // for single value mode accumulate frequency counts
     pInVal = inVals;
-    const unsigned char *pLimitInVals = inVals + (nValues * 5 / 16) + 1; // fewest values to test for text mode
     while (pInVal < pLimitInVals)
     {
-        // accumulate counts for enough values to test for text mode
         uint32_t inVal=*(pInVal++);
-        predefinedTextCharCnt += predefinedTextChars[inVal]; // count text characters
+        highBitCheck |= inVal;
+        predefinedTextCharCnt += predefinedTextChars[inVal]; // count text chars for text char mode
         if (val256[inVal]++ == 0)
         {
-            // first occurrence of value, add to uniques and set control bit to 0
-            uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
-            outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
+            // first occurrence of value, for fixed bit coding:
+            uniqueOccurrence[inVal] = nUniqueVals; // save occurrence count for this unique
+            outVals[++nUniqueVals] = (unsigned char)inVal; // store unique starting at second byte
         }
     }
-    if (nUniqueVals > uniqueLimits25[pInVal-inVals]*3/4+1)
+    if (nUniqueVals > uniqueLimit)
     {
+        // supported unique values exceeded
+        if ((highBitCheck & 0x80) == 0)
+        {
+            // attempt to compress based on high bit clear across all values
+            // confirm remaining values have high bit clear
+            while (pInVal < pLastInValPlusOne)
+                highBitCheck |= *pInVal++;
+            if ((highBitCheck & 0x80) == 0)
+                return encode7bits(inVals, outVals, nValues);
+        }
+        return 0; // too many uniques to compress with fixed bit coding, random data fails here
+    }
+    if (nUniqueVals > uniqueLimits25[nValsInitLoop] * 3/4 + 1)
+    {
+        // make sure at least 3/4 of uniques for the initial number of values is exceeded
+        //    because fixed bit coding will produce higher compression
         // check text mode validity as it's not considered after this
         // text mode will have 3/4 text values, but for smaller numbers, use .5
         // this number of values will almost always compress, though 1/4 of data must be text
         // chars to compress; encodeTextMode verifies compression occurs
-        if (predefinedTextCharCnt > (pInVal-inVals)/2)
+        if (predefinedTextCharCnt > nValsInitLoop / 2)
         {
             // compress in text mode
             return encodeTextMode(inVals, outVals, nValues);
         }
-        if (nUniqueVals > uniqueLimit)
-            return 0; // too many uniques to compress with fixed bit coding, random data fails here
     }
-    const unsigned char *pLastInValPlusOne=inVals+nValues;
+    // continue fixed bit loop with checks for high bit set and repeat counts
+    // look for minimum count to validate single value mode
+    const uint32_t singleValueOverFixexBitRepeats=nValsInitLoop*3/2;
+    const uint32_t minRepeatsSingleValueMode=(unsigned char)nValues/4+1;
+    int32_t singleValue=-1; // look for value that repeats MIN_REPEATS_SINGLE_VALUE_MODE
     while (pInVal < pLastInValPlusOne)
     {
-        // accumulte through end of values for fixed bit encoding counts
-        // and accumulate value counts for single value mode
         uint32_t inVal=*(pInVal++);
+        highBitCheck |= inVal;
         if (val256[inVal]++ == 0)
         {
-            // first occurrence of value, add to uniques and set control bit to 0
-            uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
-            outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
+            // first occurrence of value, for fixed bit coding:
+            uniqueOccurrence[inVal] = nUniqueVals; // save occurrence count for this unique
+            outVals[++nUniqueVals] = (unsigned char)inVal; // store unique starting at second byte
         }
-        else if (val256[inVal] == minRepeatsSingleValueMode)
+        else if (val256[inVal] >= minRepeatsSingleValueMode)
         {
             singleValue = (int32_t)inVal;
             break; // continue loop without further checking
         }
     }
-    if (singleValue >= 0)
+    // continue fixed bit loop with checks for high bit set and repeat counts
+    while (pInVal < pLastInValPlusOne)
     {
-        if (nUniqueVals > uniqueLimit)
+        uint32_t inVal=*(pInVal++);
+        highBitCheck |= inVal;
+        if (val256[inVal]++ == 0)
         {
-            return encodeSingleValueMode(inVals, outVals, nValues, (uint32_t)singleValue);
-        }
-        // continue check for fixed bit coding
-        while (pInVal < pLastInValPlusOne)
-        {
-            // accumulte through end of values for fixed bit encoding counts
-            uint32_t inVal=*(pInVal++);
-            if (val256[inVal] == 0)
-            {
-                // first occurrence of value, add to uniques and set control bit to 0
-                val256[inVal]++;
-                uniqueOccurrence[inVal] = nUniqueVals; // occurrence count for this unique
-                outVals[++nUniqueVals] = (unsigned char)inVal; // store unique in output starting at second byte
-            }
+            // first occurrence of value, for fixed bit coding:
+            uniqueOccurrence[inVal] = nUniqueVals; // save occurrence count for this unique
+            outVals[++nUniqueVals] = (unsigned char)inVal; // store unique starting at second byte
         }
     }
     if (nUniqueVals > uniqueLimit)
     {
+        // fixed bit coding fails, try for other compression modes
         if (singleValue >= 0)
-            return encodeSingleValueMode(inVals, outVals, nValues, (uint32_t)singleValue);
+        {
+            return encodeSingleValueMode(inVals, outVals, nValues, singleValue);
+        }
+        if ((highBitCheck & 0x80) == 0)
+            return encode7bits(inVals, outVals, nValues);
         return 0; // too many uniques to compress
+    }
+    else if ((nUniqueVals > 8) && (val256[singleValue] >= singleValueOverFixexBitRepeats))
+    {
+        // favor single value over 12 value fixed 4-bit encoding
+        return encodeSingleValueMode(inVals, outVals, nValues, singleValue);
     }
 
     // process fixed bit coding
@@ -1157,6 +1235,61 @@ static inline int32_t decodeSingleValueMode(const unsigned char *inVals, unsigne
     return (int32_t)nOriginalValues;
 } // end decodeTextMode
 
+static inline int32_t decode7bits(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
+{
+    uint32_t nextOutVal=0;
+    uint32_t nextInVal=1;
+    uint32_t val1;
+    uint32_t val2;
+    
+    // process groups of 8 bytes to output 7 bytes
+    while (nextOutVal + 7 < nOriginalValues)
+    {
+        // move groups of 7-bit vals into 8 bytes
+        val1 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(val1 & 127);
+        val2 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(((val2 << 1) & 127) | (val1 >> 7));
+        val1 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(((val1 << 2) & 127) | (val2 >> 6));
+        val2 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(((val2 << 3) & 127) | (val1 >> 5));
+        val1 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(((val1 << 4) & 127) | (val2 >> 4));
+        val2 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(((val2 << 5) & 127) | (val1 >> 3));
+        val1 = inVals[nextInVal++];
+        outVals[nextOutVal++] = (unsigned char)(((val1 << 6) & 127) | (val2 >> 2));
+        outVals[nextOutVal++] = (unsigned char)val1 >> 1;
+    }
+    while (nextOutVal++ < nOriginalValues)
+    {
+        // output final values as full bytes because no bytes saved, only bits
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextOutVal == nOriginalValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextOutVal == nOriginalValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextOutVal == nOriginalValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextOutVal == nOriginalValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextOutVal == nOriginalValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+        if (nextOutVal == nOriginalValues)
+            break;
+        outVals[nextOutVal++] = inVals[nextInVal++];
+            break;
+    }
+    *bytesProcessed = nextInVal;
+    return (int32_t)nOriginalValues;
+} // end decode7bits
+
 // -----------------------------------------------------------------------------------
 static inline int32_t fbc264d(const unsigned char *inVals, unsigned char *outVals, const uint32_t nOriginalValues, uint32_t *bytesProcessed)
 // -----------------------------------------------------------------------------------
@@ -1201,6 +1334,11 @@ static inline int32_t fbc264d(const unsigned char *inVals, unsigned char *outVal
             {
                 // single value mode
                 return decodeSingleValueMode(inVals, outVals, nOriginalValues, bytesProcessed);
+            }
+            if (firstByte & 0x40)
+            {
+                // 7-bit mode
+                return decode7bits(inVals, outVals, nOriginalValues, bytesProcessed);
             }
             // 0 in 6th bit: text mode using predefined text chars
             return decodeTextMode(inVals, outVals, nOriginalValues, bytesProcessed);
